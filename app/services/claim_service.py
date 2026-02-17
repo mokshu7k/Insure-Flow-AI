@@ -1,0 +1,252 @@
+"""
+Claim Service
+Core business logic for insurance claims
+"""
+from sqlalchemy.orm import Session
+from typing import List, Optional
+import uuid
+
+from app.models.claim import Claim
+from app.models.user import User
+from app.schemas.claim import ClaimCreate, ClaimStatusUpdate
+from app.core.constants import ClaimStatus, AuditAction
+from app.core.exceptions import (
+    ClaimNotFoundException,
+    UnauthorizedClaimAccessException,
+    InvalidClaimStatusException
+)
+from app.services.audit_service import AuditService
+from app.services.consent_service import ConsentService
+from app.services.fraud_service import FraudService
+
+
+class ClaimService:
+    """
+    Claim management service
+    Enforces consent, triggers fraud analysis, manages status workflow
+    """
+    
+    def __init__(self, db: Session):
+        self.db = db
+        self.audit_service = AuditService(db)
+        self.consent_service = ConsentService(db)
+        self.fraud_service = FraudService(db)
+    
+    def create_claim(self, claim_data: ClaimCreate, user: User) -> Claim:
+        """
+        Create new claim
+        
+        CRITICAL ENFORCEMENT:
+        1. Consent validation
+        2. Audit logging
+        
+        Args:
+            claim_data: Claim creation data
+            user: Current user
+        
+        Returns:
+            Created Claim object
+        """
+        # STEP 1: Enforce consent requirement
+        self.consent_service.enforce_consent(user.id)
+        
+        # STEP 2: Create claim
+        claim = Claim(
+            id=uuid.uuid4(),
+            policy_number=claim_data.policy_number,
+            user_id=user.id,
+            claim_type=claim_data.claim_type,
+            claim_amount=claim_data.claim_amount,
+            status=ClaimStatus.SUBMITTED.value,
+            fraud_score=None  # Will be set after fraud analysis
+        )
+        
+        self.db.add(claim)
+        self.db.commit()
+        self.db.refresh(claim)
+        
+        # STEP 3: Audit log
+        self.audit_service.log_action(
+            actor_id=user.id,
+            action_type=AuditAction.CLAIM_SUBMITTED,
+            entity_type="CLAIM",
+            entity_id=claim.id,
+            metadata={
+                "policy_number": claim.policy_number,
+                "claim_type": claim.claim_type,
+                "amount": claim.claim_amount
+            }
+        )
+        
+        return claim
+    
+    def get_claim_by_id(self, claim_id: uuid.UUID, user: User) -> Claim:
+        """
+        Get claim by ID with authorization check
+        
+        Args:
+            claim_id: Claim ID
+            user: Current user
+        
+        Returns:
+            Claim object
+        
+        Raises:
+            ClaimNotFoundException: If claim not found
+            UnauthorizedClaimAccessException: If user not authorized
+        """
+        claim = self.db.query(Claim).filter(Claim.id == claim_id).first()
+        
+        if not claim:
+            raise ClaimNotFoundException(str(claim_id))
+        
+        # Authorization check
+        if not self._can_access_claim(claim, user):
+            raise UnauthorizedClaimAccessException()
+        
+        # Audit log
+        self.audit_service.log_action(
+            actor_id=user.id,
+            action_type=AuditAction.CLAIM_VIEWED,
+            entity_type="CLAIM",
+            entity_id=claim.id
+        )
+        
+        return claim
+    
+    def get_user_claims(
+        self,
+        user: User,
+        skip: int = 0,
+        limit: int = 20,
+        status: Optional[str] = None
+    ) -> List[Claim]:
+        """
+        Get claims for user (paginated)
+        
+        Args:
+            user: Current user
+            skip: Offset
+            limit: Page size
+            status: Optional status filter
+        
+        Returns:
+            List of claims
+        """
+        query = self.db.query(Claim)
+        
+        # Role-based filtering
+        if user.role == "CUSTOMER":
+            query = query.filter(Claim.user_id == user.id)
+        # INSURER_ADMIN and AUDITOR can see all claims
+        
+        # Status filter
+        if status:
+            query = query.filter(Claim.status == status)
+        
+        return query.order_by(Claim.created_at.desc()).offset(skip).limit(limit).all()
+    
+    def update_claim_status(
+        self,
+        claim_id: uuid.UUID,
+        status_update: ClaimStatusUpdate,
+        admin_user: User
+    ) -> Claim:
+        """
+        Update claim status (admin only)
+        
+        CRITICAL: Human-in-the-loop enforcement
+        
+        Args:
+            claim_id: Claim ID
+            status_update: Status update data
+            admin_user: Admin user performing update
+        
+        Returns:
+            Updated Claim object
+        """
+        claim = self.db.query(Claim).filter(Claim.id == claim_id).first()
+        
+        if not claim:
+            raise ClaimNotFoundException(str(claim_id))
+        
+        # Update status
+        old_status = claim.status
+        claim.status = status_update.status
+        
+        self.db.commit()
+        self.db.refresh(claim)
+        
+        # Audit log (CRITICAL for compliance)
+        self.audit_service.log_action(
+            actor_id=admin_user.id,
+            action_type=AuditAction.CLAIM_APPROVED if status_update.status == "APPROVED" else AuditAction.CLAIM_REJECTED,
+            entity_type="CLAIM",
+            entity_id=claim.id,
+            metadata={
+                "old_status": old_status,
+                "new_status": status_update.status,
+                "reason": status_update.reason,
+                "fraud_score": claim.fraud_score
+            }
+        )
+        
+        return claim
+    
+    def trigger_fraud_analysis(self, claim_id: uuid.UUID) -> Claim:
+        """
+        Trigger fraud analysis for claim
+        
+        CRITICAL: This is where AI meets compliance
+        
+        Args:
+            claim_id: Claim ID
+        
+        Returns:
+            Updated Claim object
+        """
+        claim = self.db.query(Claim).filter(Claim.id == claim_id).first()
+        
+        if not claim:
+            raise ClaimNotFoundException(str(claim_id))
+        
+        # Run fraud analysis
+        fraud_result = self.fraud_service.analyze_claim(claim)
+        
+        # Update claim with fraud score
+        claim.fraud_score = fraud_result.fraud_score
+        
+        # Update status based on fraud score
+        if fraud_result.fraud_score >= 0.7:
+            claim.status = ClaimStatus.MANUAL_REVIEW_REQUIRED.value
+        else:
+            claim.status = ClaimStatus.FRAUD_ANALYZED.value
+        
+        self.db.commit()
+        self.db.refresh(claim)
+        
+        return claim
+    
+    def _can_access_claim(self, claim: Claim, user: User) -> bool:
+        """
+        Check if user can access claim
+        
+        Args:
+            claim: Claim object
+            user: User object
+        
+        Returns:
+            bool: True if authorized
+        """
+        # Customer can only access own claims
+        if user.role == "CUSTOMER":
+            return str(claim.user_id) == str(user.id)
+        
+        # Admin and Auditor can access all claims
+        if user.role in ["INSURER_ADMIN", "AUDITOR"]:
+            return True
+        
+        # Provider can access claims with QR authorization
+        # (handled separately in QR validation)
+        
+        return False

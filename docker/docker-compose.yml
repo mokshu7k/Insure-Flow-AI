@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: insureflow_db
+    environment:
+      POSTGRES_DB: insureflow
+      POSTGRES_USER: insureflow_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insureflow_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insureflow_network
+
+  # FastAPI Application
+  app:
+    build: .
+    container_name: insureflow_app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://insureflow_user:${DB_PASSWORD}@db:5432/insureflow
+      SECRET_KEY: ${SECRET_KEY}
+      QR_SECRET_KEY: ${QR_SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      DEBUG: "false"
+      CREATE_TABLES_ON_STARTUP: "true"
+    volumes:
+      - ./app:/app/app
+      - app_storage:/app/storage
+      - app_logs:/app/logs
+    ports:
+      - "8000:8000"
+    networks:
+      - insureflow_network
+    restart: unless-stopped
+
+  # Nginx Reverse Proxy (optional, for production)
+  nginx:
+    image: nginx:alpine
+    container_name: insureflow_nginx
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    networks:
+      - insureflow_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  app_storage:
+    driver: local
+  app_logs:
+    driver: local
+
+networks:
+  insureflow_network:
+    driver: bridge
