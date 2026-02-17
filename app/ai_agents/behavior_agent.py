@@ -1,65 +1,60 @@
 """
-Behavior Pattern Agent
-User behavioral analysis
+Behavior Pattern Agent (backward-compatibility wrapper)
+
+Delegates to ``layer2_statistical`` in the new fraud engine.
+Preserves the original class name and ``analyze_behavior()`` method.
+
+The old implementation used ``random.choice()`` – the new engine is
+fully deterministic, reading ``recent_claim_count``, ``prior_fraud_flags``,
+and ``days_to_policy_expiry`` from the claim context instead.
 """
 from typing import Dict, Any, List, Tuple
-import random
+
+from app.ai_agents.fraud import layer2_statistical
 
 
 class BehaviorAgent:
     """
     Behavioral pattern analyzer
-    
+
     APPROACH: User behavior analysis
     - Claim frequency patterns
     - Policy utilization rates
     - Historical red flags
-    
-    In production: Would use user history from DB
     """
-    
+
     def analyze_behavior(self, claim_context: Dict[str, Any]) -> Tuple[List[str], float]:
         """
-        Analyze user behavioral patterns
-        
+        Analyze user behavioral patterns.
+
         Args:
             claim_context: Claim data with user_id
-        
+
         Returns:
             Tuple of (flags, behavior_score)
         """
-        flags = []
+        result = layer2_statistical.evaluate(claim_context)
+        # Filter to only behavioral flags
+        behavioral_flags = [
+            f for f in result.anomalies
+            if f in {
+                "UNUSUALLY_HIGH_CLAIM_FREQUENCY",
+                "CLAIM_AFTER_LONG_DORMANCY",
+                "CLAIM_NEAR_POLICY_EXPIRY",
+                "PREVIOUS_FRAUD_FLAGS_ON_RECORD",
+            }
+        ]
+
+        # Compute a proportional behavior-only score
         behavior_score = 0.0
-        
-        # In production: Query user's claim history from DB
-        # For now: Simulated behavioral analysis
-        
-        # BEHAVIOR 1: Unusual claim frequency
-        # Simulate: Check if user has made multiple claims recently
-        claim_frequency_risk = random.choice([0.0, 0.0, 0.0, 0.2, 0.35])
-        if claim_frequency_risk > 0.3:
-            flags.append("UNUSUALLY_HIGH_CLAIM_FREQUENCY")
-            behavior_score += claim_frequency_risk
-        
-        # BEHAVIOR 2: First claim after long dormancy
-        # Simulate: Check if policy was inactive for long period
-        dormancy_risk = random.choice([0.0, 0.0, 0.0, 0.15])
-        if dormancy_risk > 0.1:
-            flags.append("CLAIM_AFTER_LONG_DORMANCY")
-            behavior_score += dormancy_risk
-        
-        # BEHAVIOR 3: Policy near expiry
-        # Simulate: Check if claim submitted close to policy expiry
-        expiry_risk = random.choice([0.0, 0.0, 0.0, 0.2])
-        if expiry_risk > 0.15:
-            flags.append("CLAIM_NEAR_POLICY_EXPIRY")
-            behavior_score += expiry_risk
-        
-        # BEHAVIOR 4: Historical fraud flags
-        # Simulate: Check if user has previous fraud flags
-        history_risk = random.choice([0.0, 0.0, 0.0, 0.0, 0.4])
-        if history_risk > 0.3:
-            flags.append("PREVIOUS_FRAUD_FLAGS_ON_RECORD")
-            behavior_score += history_risk
-        
-        return flags, min(behavior_score, 1.0)
+        for flag in behavioral_flags:
+            if flag == "UNUSUALLY_HIGH_CLAIM_FREQUENCY":
+                behavior_score += 0.35
+            elif flag == "PREVIOUS_FRAUD_FLAGS_ON_RECORD":
+                behavior_score += 0.40
+            elif flag == "CLAIM_NEAR_POLICY_EXPIRY":
+                behavior_score += 0.20
+            elif flag == "CLAIM_AFTER_LONG_DORMANCY":
+                behavior_score += 0.15
+
+        return behavioral_flags, min(1.0, behavior_score)
