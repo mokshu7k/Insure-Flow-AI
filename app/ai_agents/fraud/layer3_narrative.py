@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 
 from app.ai_agents.fraud import config as cfg
 from app.ai_agents.fraud import privacy
-from app.ai_agents.fraud.schemas import NarrativeResult
+from app.schemas.fraud import NarrativeResult
 
 logger = logging.getLogger(__name__)
 

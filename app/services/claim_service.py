@@ -5,9 +5,11 @@ Core business logic for insurance claims
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import uuid
+from datetime import datetime
 
 from app.models.claim import Claim
 from app.models.user import User
+from app.models.user_fraud_profile import UserFraudProfile
 from app.schemas.claim import ClaimCreate, ClaimStatusUpdate
 from app.core.constants import ClaimStatus, AuditAction
 from app.core.exceptions import (
@@ -65,7 +67,10 @@ class ClaimService:
         self.db.commit()
         self.db.refresh(claim)
         
-        # STEP 3: Audit log
+        # STEP 3: Update user fraud profile (increment claim count)
+        self._update_user_profile_on_claim(user.id)
+        
+        # STEP 4: Audit log
         self.audit_service.log_action(
             actor_id=user.id,
             action_type=AuditAction.CLAIM_SUBMITTED,
@@ -219,6 +224,8 @@ class ClaimService:
         # Update status based on fraud score
         if fraud_result.fraud_score >= 0.7:
             claim.status = ClaimStatus.MANUAL_REVIEW_REQUIRED.value
+            # Increment prior_fraud_flags for high-risk claims
+            self._update_user_profile_on_fraud(claim.user_id)
         else:
             claim.status = ClaimStatus.FRAUD_ANALYZED.value
         
@@ -226,6 +233,52 @@ class ClaimService:
         self.db.refresh(claim)
         
         return claim
+    
+    def _update_user_profile_on_claim(self, user_id) -> None:
+        """
+        Increment recent_claim_count on claim creation.
+        Creates a default profile if one does not exist.
+        """
+        profile = (
+            self.db.query(UserFraudProfile)
+            .filter(UserFraudProfile.user_id == user_id)
+            .first()
+        )
+        if profile is None:
+            profile = UserFraudProfile(
+                user_id=user_id,
+                recent_claim_count=1,
+                prior_fraud_flags=0,
+                last_updated=datetime.utcnow(),
+            )
+            self.db.add(profile)
+        else:
+            profile.recent_claim_count += 1
+            profile.last_updated = datetime.utcnow()
+        self.db.commit()
+    
+    def _update_user_profile_on_fraud(self, user_id) -> None:
+        """
+        Increment prior_fraud_flags when fraud score >= threshold.
+        Creates a default profile if one does not exist.
+        """
+        profile = (
+            self.db.query(UserFraudProfile)
+            .filter(UserFraudProfile.user_id == user_id)
+            .first()
+        )
+        if profile is None:
+            profile = UserFraudProfile(
+                user_id=user_id,
+                recent_claim_count=0,
+                prior_fraud_flags=1,
+                last_updated=datetime.utcnow(),
+            )
+            self.db.add(profile)
+        else:
+            profile.prior_fraud_flags += 1
+            profile.last_updated = datetime.utcnow()
+        self.db.commit()
     
     def _can_access_claim(self, claim: Claim, user: User) -> bool:
         """
