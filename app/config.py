@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     # Fraud Detection
     FRAUD_THRESHOLD: float = 0.7
     HIGH_FRAUD_THRESHOLD: float = 0.85
+
+    # External AI (Ollama — self-hosted, no data egress)
+    # Only used when ENABLE_EXTERNAL_AI=True in ai_agents/fraud/config.py
+    EXTERNAL_AI_BASE_URL: str = "http://localhost:11434"
+    EXTERNAL_AI_MODEL: str = "mistral"
     
     # Compliance
     CONSENT_VERSION: str = "1.0"

@@ -8,6 +8,9 @@ pydantic-settings>=2.1.0
 sqlalchemy>=2.0.23
 psycopg2-binary>=2.9.10
 alembic>=1.12.1
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
 
 # ── Security & Authentication ─────────────────────────
 python-jose[cryptography]>=3.3.0
@@ -26,6 +29,19 @@ numpy>=1.26.4
 
 # ── Speech-to-Text (optional — uncomment if needed) ──
 # SpeechRecognition>=3.10.0
+# OCR & Image Processing
+pytesseract==0.3.10
+Pillow==10.1.0
+opencv-python==4.8.1.78
+# PaddleOCR - primary OCR engine (layout, tables, multilingual, Hindi)
+paddlepaddle==2.6.1
+paddleocr==2.7.3
+# TrOCR - handwriting recognition fallback (prescriptions, FIRs)
+transformers==4.38.2
+torch==2.2.1
+# PDF processing
+PyMuPDF==1.23.8
+pdfminer.six==20221105
 
 # ── Utilities ─────────────────────────────────────────
 python-dateutil>=2.8.2

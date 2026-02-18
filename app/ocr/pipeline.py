@@ -2,8 +2,17 @@
 OCR Pipeline
 Orchestrates: preprocess → extract → parse → validate.
 
-PDF routing: uses PyMuPDF (fitz) to rasterise pages then feeds to image pipeline.
-Image routing: raw bytes → preprocess → tesseract → parse.
+Engine routing (all self-hosted, zero data egress):
+  Handwritten doc types  (PRESCRIPTION, POLICE_REPORT, FIR)
+      → TrOCR (microsoft/trocr-large-handwritten)
+  Table/layout doc types (INVOICE, ESTIMATE, DISCHARGE_SUMMARY, MEDICAL_REPORT)
+      → PaddleOCR PPStructure (returns structured table_data alongside raw_text)
+  All other printed docs
+      → PaddleOCR standard
+  Any engine confidence < 0.5
+      → falls back to next engine automatically (see extractor.py)
+
+PDF routing: PyMuPDF rasterises pages → image pipeline.
 Graceful degradation: any stage failure returns manual_review=True, never crashes caller.
 """
 import io
@@ -81,6 +90,8 @@ class OCRPipeline:
     # ── Image path ───────────────────────────────────────────────────────────
 
     def _process_image(self, file_bytes: bytes, document_type: str) -> Dict[str, Any]:
+        # PaddleOCR handles its own angle/skew correction internally.
+        # Run full preprocessing only for Tesseract fallback cases (clean printed docs).
         preprocessed = self.preprocessor.preprocess(file_bytes)
         extraction: ExtractionResult = self.extractor.extract_text(
             preprocessed, document_type=document_type
@@ -163,7 +174,11 @@ class OCRPipeline:
         document_type: str,
         pages: int = 1,
     ) -> Dict[str, Any]:
-        structured = self.parser.parse(extraction.raw_text, document_type)
+        structured = self.parser.parse(
+            extraction.raw_text,
+            document_type,
+            table_data=extraction.table_data,
+        )
         requires_review = (
             extraction.confidence < MINIMUM_CONFIDENCE or extraction.word_count < 5
         )
@@ -178,6 +193,7 @@ class OCRPipeline:
                 "confidence_threshold": MINIMUM_CONFIDENCE,
                 "document_type": document_type,
                 "pages_processed": pages,
+                "tables_extracted": len(extraction.table_data),
             },
         }
 

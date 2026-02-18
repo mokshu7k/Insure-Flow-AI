@@ -1,6 +1,8 @@
 """
 OCR Parser
-Extracts structured fields from raw OCR text using regex + NLP
+Extracts structured fields from raw OCR text using regex + NLP.
+When table_data is provided (from PPStructure), structured rows are used
+directly for amount/line-item extraction, reducing regex fragility.
 """
 import re
 import logging
@@ -113,31 +115,43 @@ class OCRParser:
         ),
     }
 
-    def parse(self, raw_text: str, document_type: str) -> Dict[str, Any]:
+    def parse(self, raw_text: str, document_type: str, table_data: list = None) -> Dict[str, Any]:
         """
         Parse raw OCR text into structured fields.
 
         Args:
-            raw_text: Raw OCR output text
-            document_type: Type of document (INVOICE, PRESCRIPTION, etc.)
+            raw_text:      Raw OCR output text.
+            document_type: Type of document (INVOICE, PRESCRIPTION, etc.).
+            table_data:    Optional structured table rows from PPStructure —
+                           list of rows, each row a list of cell strings.
+                           When provided, amount and line-item extraction uses
+                           table cells directly instead of regex on raw text.
 
         Returns:
-            Dictionary of extracted fields
+            Dictionary of extracted fields.
         """
         if not raw_text or not raw_text.strip():
             return {"parse_error": "Empty OCR text", "document_type": document_type}
 
+        table_data = table_data or []
+
         # Base extraction (common to all documents)
         result = {
             "document_type": document_type,
-            "extracted_amounts": self._extract_amounts(raw_text),
-            "total_amount": self._extract_total_amount(raw_text),
+            "extracted_amounts": self._extract_amounts_from_tables(table_data)
+                                 or self._extract_amounts(raw_text),
+            "total_amount": self._extract_total_from_tables(table_data)
+                            or self._extract_total_amount(raw_text),
             "dates": self._extract_dates(raw_text),
             "invoice_number": self._extract_field("invoice_number", raw_text),
             "hospital_name": self._extract_field("hospital_name", raw_text),
             "gst_number": self._extract_field("gst_number", raw_text),
             "reg_number": self._extract_field("reg_number", raw_text),
         }
+
+        # Attach structured line items when available (invoices, discharge summaries)
+        if table_data:
+            result["line_items"] = self._build_line_items(table_data)
 
         # Document-specific extraction
         if document_type in ("INVOICE", "ESTIMATE"):
@@ -160,6 +174,84 @@ class OCRParser:
 
         logger.debug(f"Parsed {len(result)} fields from {document_type}")
         return result
+
+    # ─────────────────────────────────────────────
+    # Table-data helpers (PPStructure rows)
+    # ─────────────────────────────────────────────
+
+    def _extract_amounts_from_tables(self, table_data: list) -> list:
+        """
+        Extract all numeric amounts from structured table cells.
+        More reliable than regex on raw_text for itemized invoices.
+        """
+        amounts = []
+        amount_re = re.compile(r"[\d,]+(?:\.\d{1,2})?")
+        for row in table_data:
+            for cell in row:
+                cell = str(cell).replace(",", "")
+                for m in amount_re.finditer(cell):
+                    try:
+                        val = float(m.group())
+                        if val > 0:
+                            amounts.append(val)
+                    except ValueError:
+                        pass
+        return sorted(set(amounts), reverse=True)[:20]
+
+    def _extract_total_from_tables(self, table_data: list) -> Optional[float]:
+        """
+        Find the total amount from a table by scanning for 'total' keyword
+        in the first cell and parsing the last cell as amount.
+        """
+        total_re = re.compile(r"\btotal\b", re.IGNORECASE)
+        amount_re = re.compile(r"[\d,]+(?:\.\d{1,2})?")
+        for row in table_data:
+            if row and total_re.search(str(row[0])):
+                # Scan cells right-to-left for first numeric value
+                for cell in reversed(row):
+                    cell_clean = str(cell).replace(",", "")
+                    m = amount_re.search(cell_clean)
+                    if m:
+                        try:
+                            return float(m.group())
+                        except ValueError:
+                            pass
+        return None
+
+    def _build_line_items(self, table_data: list) -> list:
+        """
+        Convert raw table rows into structured line-item dicts.
+        Skips header rows (all-text rows at the top).
+
+        Returns list like:
+          [{"description": "Consultation", "quantity": 1, "amount": 500.0}, ...]
+        """
+        items = []
+        amount_re = re.compile(r"^[\d,]+(?:\.\d{1,2})?$")
+        for row in table_data:
+            if len(row) < 2:
+                continue
+            cells = [str(c).strip() for c in row]
+            # Skip pure header rows
+            if all(not amount_re.match(c.replace(",", "")) for c in cells):
+                continue
+            # Last numeric cell = amount, first cell = description
+            amount = None
+            for cell in reversed(cells):
+                clean = cell.replace(",", "")
+                if amount_re.match(clean):
+                    try:
+                        amount = float(clean)
+                        break
+                    except ValueError:
+                        pass
+            if amount is not None:
+                items.append({
+                    "description": cells[0],
+                    "amount": amount,
+                    "raw_row": cells,
+                })
+        return items
 
     # ─────────────────────────────────────────────
     # Field extractors
@@ -253,7 +345,33 @@ class OCRParser:
         }
 
     def _parse_vehicle_rc(self, text: str) -> Dict[str, Any]:
-        """Additional fields for vehicle RC documents"""
+        """Fields for Vehicle RC documents (motor claims)."""
         return {
             "vehicle_number": self._extract_field("vehicle_number", text),
+            "chassis_number": self._extract_re(
+                r"(?:chassis|chasis|ch\.?\s*no\.?)[:\s]+([A-Za-z0-9]+)", text),
+            "engine_number": self._extract_re(
+                r"(?:engine|eng\.?\s*no\.?)[:\s]+([A-Za-z0-9]+)", text),
+            "owner_name": self._extract_re(
+                r"(?:owner(?:'s)?\s+name|registered owner)[:\s]+([A-Za-z\s\.]+?)(?:\n|$|,)", text),
+            "rto_code": self._extract_re(
+                r"(?:rto|registering authority)[:\s]+([A-Za-z0-9\s\-]+?)(?:\n|$)", text),
+            "fuel_type": self._extract_re(
+                r"(?:fuel\s+type|fuel)[:\s]+(petrol|diesel|electric|cng|lpg|hybrid)",
+                text, flags=re.IGNORECASE),
+            "registration_date": self._extract_re(
+                r"(?:date of registration|reg(?:\.|\s+date)?)[:\s]+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})",
+                text),
         }
+
+    def _extract_re(
+        self,
+        pattern: str,
+        text: str,
+        flags: int = 0,
+    ) -> Optional[str]:
+        """One-off regex extraction without adding to PATTERNS dict."""
+        m = re.search(pattern, text, flags)
+        if m:
+            return m.group(1).strip() if m.lastindex and m.lastindex >= 1 else m.group(0).strip()
+        return None

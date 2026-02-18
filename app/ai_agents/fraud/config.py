@@ -67,8 +67,15 @@ STATISTICAL_SEED: int = 42   # deterministic seeding for reproducibility
 # Layer 3 – Narrative / AI
 # ---------------------------------------------------------------------------
 ENABLE_EXTERNAL_AI: bool = False
-AI_TIMEOUT_SECONDS: float = 5.0
+AI_TIMEOUT_SECONDS: float = 10.0
 NARRATIVE_DEFAULT_SCORE: float = 0.0   # fallback score when AI fails
+
+# Ollama (self-hosted LLM, zero data egress)
+# Set EXTERNAL_AI_BASE_URL to your Ollama instance, e.g. http://localhost:11434
+# Set EXTERNAL_AI_MODEL to any model you have pulled, e.g. mistral, llama3, gemma2
+EXTERNAL_AI_BASE_URL: str = "http://localhost:11434"
+EXTERNAL_AI_MODEL: str = "mistral"    # model must be pulled: `ollama pull mistral`
+EXTERNAL_AI_MAX_TOKENS: int = 512      # keep response short and structured
 
 # ---------------------------------------------------------------------------
 # Privacy
