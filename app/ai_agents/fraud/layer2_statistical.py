@@ -33,6 +33,16 @@ def evaluate(
     anomalies: list[str] = []
     raw_score: float = 0.0
 
+    # --- Fail loudly if required fields are missing ---
+    required_fields = [
+        "recent_claim_count",
+        "prior_fraud_flags",
+        "days_to_policy_expiry",
+    ]
+    for field in required_fields:
+        if field not in claim_context:
+            raise ValueError(f"Layer2 missing required field: {field}")
+
     claim_amount: float = claim_context.get("claim_amount", 0.0)
     claim_type: str = claim_context.get("claim_type", "")
 

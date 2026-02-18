@@ -313,10 +313,12 @@ sequenceDiagram
 - Maps field names for backward compatibility
 - To modify: only if you change schemas
 
-**`app/ai_agents/fraud/schemas.py`** -- Internal type contracts
-- `DeterministicResult`, `StatisticalResult`, `NarrativeResult` -- per-layer output
+**`app/schemas/fraud.py`** -- All fraud-related type contracts
+- Engine layer results: `DeterministicResult`, `StatisticalResult`, `NarrativeResult` -- per-layer output
 - `AggregatedScore` -- combiner output
-- `FraudAssessmentResponse` -- final frozen output with config version
+- `FraudEngineResponse` -- final frozen engine output with config version
+- `FraudAnalysisResult` -- mutable legacy result for service layer
+- `FraudAssessmentResponse` -- API response schema (reads from DB)
 - All scores clamped to [0.0, 1.0] via validators
 - To modify: add new fields to layer outputs
 

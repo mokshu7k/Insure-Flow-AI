@@ -24,6 +24,7 @@ from app.models.qr import QRAuthorization
 from app.models.settlement import Settlement
 from app.models.audit import AuditLog
 from app.models.access_log import DocumentAccessLog
+from app.models.user_fraud_profile import UserFraudProfile
 
 # Alembic Config object (gives access to alembic.ini values)
 config = context.config

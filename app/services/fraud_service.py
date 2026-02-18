@@ -10,6 +10,7 @@ from app.models.fraud import FraudAssessment
 from app.schemas.fraud import FraudAnalysisResult
 from app.ai_agents.orchestrator import FraudOrchestrator
 from app.services.audit_service import AuditService
+from app.services.claim_context_builder import ClaimContextBuilder
 from app.core.constants import AuditAction
 
 
@@ -44,26 +45,22 @@ class FraudService:
         Returns:
             FraudAnalysisResult with score and explanation
         """
-        # STEP 1: Get claim data context
-        claim_context = {
-            "claim_id": str(claim.id),
-            "policy_number": claim.policy_number,
-            "claim_type": claim.claim_type,
-            "claim_amount": claim.claim_amount,
-            "user_id": str(claim.user_id),
-        }
+        # STEP 1: Build enriched claim context (includes historical features)
+        builder = ClaimContextBuilder(self.db)
+        claim_context = builder.build(claim)
         
         # STEP 2: Run multi-agent fraud analysis
         analysis_result = self.orchestrator.analyze(claim_context)
         
-        # STEP 3: Store explainable fraud assessment
+        # STEP 3: Store explainable fraud assessment with feature snapshot
         fraud_assessment = FraudAssessment(
             id=uuid.uuid4(),
             claim_id=claim.id,
             fraud_score=analysis_result.fraud_score,
             deterministic_signals_json=analysis_result.deterministic_flags,
             statistical_signals_json=analysis_result.statistical_flags,
-            explanation_text=analysis_result.explanation
+            explanation_text=analysis_result.explanation,
+            feature_snapshot_json=claim_context,
         )
         
         self.db.add(fraud_assessment)
