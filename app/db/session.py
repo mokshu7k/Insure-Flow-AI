@@ -8,12 +8,23 @@ from typing import Generator
 from app.config import settings
 
 # Create SQLAlchemy engine
+# Create SQLAlchemy engine
+engine_args = {
+    "pool_pre_ping": True,
+    "echo": settings.DEBUG,
+}
+
+if settings.DATABASE_URL.startswith("sqlite"):
+    engine_args["connect_args"] = {"check_same_thread": False}
+    from sqlalchemy.pool import StaticPool
+    engine_args["poolclass"] = StaticPool
+else:
+    engine_args["pool_size"] = 10
+    engine_args["max_overflow"] = 20
+
 engine = create_engine(
     settings.DATABASE_URL,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=10,
-    max_overflow=20,
-    echo=settings.DEBUG,  # Log SQL queries in debug mode
+    **engine_args
 )
 
 # Session factory
