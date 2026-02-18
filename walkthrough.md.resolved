@@ -1,0 +1,303 @@
+# InsureFlow-AI — Fraud Detection Engine
+
+> Production-grade hybrid fraud analysis system: deterministic rules → statistical anomalies → AI narrative, with privacy-first design and full auditability.
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart TD
+    A["API Route / Service Layer"] --> B["fraud_service.py"]
+    B --> C["FraudOrchestrator (wrapper)"]
+    C --> D["FraudEngineOrchestrator"]
+
+    D --> L1["Layer 1: Deterministic"]
+    D --> L2["Layer 2: Statistical"]
+    D --> L3["Layer 3: Narrative"]
+
+    L3 --> P["privacy.py (PII gate)"]
+
+    L1 --> AGG["aggregator.py"]
+    L2 --> AGG
+    L3 --> AGG
+
+    AGG --> AD["adapter.py"]
+    D --> AUD["audit_logger.py"]
+    AD --> B
+
+    CFG["config.py"] -.->|thresholds / weights| L1
+    CFG -.-> L2
+    CFG -.-> L3
+    CFG -.-> AGG
+
+    style D fill:#1a1a2e,color:#fff
+    style AGG fill:#16213e,color:#fff
+    style P fill:#0f3460,color:#fff
+```
+
+### Data Flow (one claim)
+
+1. **API** receives a claim → calls `FraudService.analyze_claim(claim)`
+2. **fraud_service.py** builds `claim_context` dict, hands it to `FraudOrchestrator.analyze()`
+3. **Wrapper orchestrator** delegates to `FraudEngineOrchestrator.analyze()`
+4. Engine runs **Layer 1 → Layer 2 → Layer 3** in sequence
+5. **Aggregator** combines weighted scores (handles AI degraded mode)
+6. **Audit logger** writes an immutable record (no raw PII)
+7. **Adapter** converts the frozen engine response back to the legacy [FraudAnalysisResult](file:///e:/Projects/Insure-Flow-AI/app/schemas/fraud.py#36-44)
+8. Result flows back to the API
+
+---
+
+## File-by-File Reference
+
+### New Engine — `app/ai_agents/fraud/`
+
+---
+
+#### [config.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/config.py)
+
+**Purpose**: Single source of truth for every tunable parameter. No magic numbers exist anywhere else in the engine.
+
+| Category | Key constants |
+|----------|--------------|
+| Versioning | `CONFIG_VERSION`, `BASELINE_VERSION` |
+| Layer weights | `WEIGHT_DETERMINISTIC` (0.40), `WEIGHT_STATISTICAL` (0.35), `WEIGHT_NARRATIVE` (0.25) |
+| Degraded weights | `DEGRADED_WEIGHT_DETERMINISTIC` (0.55), `DEGRADED_WEIGHT_STATISTICAL` (0.45) — used when AI times out |
+| L1 thresholds | `CLAIM_AMOUNT_THRESHOLDS` per claim type, `ROUND_AMOUNT_MODULUS`, `MIN_POLICY_NUMBER_LENGTH` |
+| L2 baselines | `STATISTICAL_BASELINES` (mean/std per type), `Z_SCORE_THRESHOLD`, behavioral thresholds |
+| L3 / AI | `ENABLE_EXTERNAL_AI`, `AI_TIMEOUT_SECONDS`, `NARRATIVE_DEFAULT_SCORE` |
+| Privacy | `DEFAULT_PRIVACY_MODE` (always `"balanced"`, never `"raw"`) |
+| Risk levels | `RISK_LEVEL_BOUNDARIES` — score → label mapping |
+
+> [!IMPORTANT]
+> `CONFIG_VERSION` is embedded in every `FraudAssessmentResponse`. When you change any threshold or weight, **bump this version** so scores are traceable to the exact config that produced them.
+
+---
+
+#### [schemas.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/schemas.py)
+
+**Purpose**: Strict Pydantic models enforcing type safety and score normalisation at every boundary.
+
+| Schema | Used by | Key property |
+|--------|---------|-------------|
+| `DeterministicResult` | Layer 1 output | `score: float`, `signals: List[str]` |
+| `StatisticalResult` | Layer 2 output | `score: float`, `anomalies: List[str]` |
+| `NarrativeResult` | Layer 3 output | `score: float`, `structured_reasoning: dict`, `ai_degraded_mode: bool` |
+| `AggregatedScore` | Aggregator output | `final_score`, `config_version`, `baseline_version`, `ai_degraded_mode` |
+| `FraudAssessmentResponse` | Orchestrator final output | **Frozen** (`ConfigDict(frozen=True)`) — immutable once created |
+
+Every score field has a `@field_validator` that clamps to `[0.0, 1.0]`.
+
+---
+
+#### [privacy.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/privacy.py)
+
+**Purpose**: PII sanitisation gateway. Layer 3 **must** route through this before any AI processing.
+
+| Mode | What it does |
+|------|-------------|
+| `strict` | Removes all PII — user_id, policy_number, names, emails. Amounts replaced with bands (e.g. `"100K_TO_500K"`) |
+| `balanced` | Masks partial PII — last 4 chars of policy/user_id visible, amounts kept, names removed |
+| `raw` | No sanitisation — **requires explicit opt-in**, can never be the config default |
+
+Safety guard: if config accidentally sets `DEFAULT_PRIVACY_MODE = "raw"`, the runtime overrides it to `"balanced"` and logs a warning.
+
+Scrubs regex patterns for: emails, phone numbers, Aadhaar numbers, PAN cards.
+
+---
+
+#### [layer1_deterministic.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/layer1_deterministic.py)
+
+**Purpose**: Pure business-rule fraud checks. Fully deterministic — same input always produces same output.
+
+**Function**: `evaluate(claim_context) → DeterministicResult`
+
+**Rules applied**:
+
+| Rule | Signal | Trigger |
+|------|--------|---------|
+| Amount threshold | `AMOUNT_EXCEEDS_THRESHOLD` | Amount > type-specific limit from config |
+| Round amount | `SUSPICIOUSLY_ROUND_AMOUNT` | Amount is divisible by 10,000 and > 50,000 |
+| Policy format | `INVALID_POLICY_FORMAT` | Policy number shorter than 8 characters |
+
+**Scoring**: Each signal contributes `SCORE_PER_DETERMINISTIC_SIGNAL` (0.15), capped at 1.0.
+
+**Constraints**: No DB queries. No external calls. No randomness.
+
+---
+
+#### [layer2_statistical.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/layer2_statistical.py)
+
+**Purpose**: Statistical anomaly detection + behavioural pattern analysis. Replaces both the old `anomaly_agent.py` and `behavior_agent.py`.
+
+**Function**: `evaluate(claim_context) → StatisticalResult`
+
+**Checks performed**:
+
+| Check | Signal | How |
+|-------|--------|-----|
+| Amount outlier | `AMOUNT_STATISTICAL_OUTLIER` | Z-score against type baseline > 2.5 |
+| Claim frequency | `UNUSUALLY_HIGH_CLAIM_FREQUENCY` | `recent_claim_count` ≥ 3 |
+| Prior fraud | `PREVIOUS_FRAUD_FLAGS_ON_RECORD` | `prior_fraud_flags` ≥ 1 |
+| Near expiry | `CLAIM_NEAR_POLICY_EXPIRY` | `days_to_policy_expiry` ≤ 30 |
+
+**Key difference from old code**: The old agents used `random.choice()` for provider risk and temporal clustering. The new engine reads actual pre-fetched fields from `claim_context`, making it **fully deterministic**.
+
+**Constraints**: Historical data must be pre-fetched by the caller and passed in `claim_context`. No DB queries inside.
+
+---
+
+#### [layer3_narrative.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/layer3_narrative.py)
+
+**Purpose**: Generate structured fraud explanations. Routes through privacy.py. Supports local-only default and external AI with timeout fallback.
+
+**Function**: `evaluate(claim_context, signals, anomalies, behavioral_flags, preliminary_score) → NarrativeResult`
+
+**Execution flow**:
+
+```mermaid
+flowchart LR
+    A[Input] --> B[privacy.sanitize]
+    B --> C{ENABLE_EXTERNAL_AI?}
+    C -->|Yes| D[Call External AI]
+    C -->|No| E[Local Narrative]
+    D -->|Timeout/Error| F[ai_degraded_mode = True]
+    F --> E
+    D -->|Success| G[Return NarrativeResult]
+    E --> G
+```
+
+**Local narrative** builds a `structured_reasoning` dict with:
+- `risk_level` — classified from config boundaries
+- `summary` — one-line risk assessment
+- `signals_explained` — human-readable description per flag
+- `recommendation` — action guidance based on score
+
+**On AI failure**: Returns `NARRATIVE_DEFAULT_SCORE` (0.0), sets `ai_degraded_mode = True`. The aggregator then zeroes out the narrative weight and renormalises.
+
+---
+
+#### [aggregator.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/aggregator.py)
+
+**Purpose**: Combine layer scores into a single fraud score using configurable weights.
+
+**Function**: `aggregate(deterministic, statistical, narrative) → AggregatedScore`
+
+**Normal mode** weights:
+
+| Layer | Weight |
+|-------|--------|
+| Deterministic | 0.40 |
+| Statistical | 0.35 |
+| Narrative | 0.25 |
+
+**AI degraded mode** (when `narrative.ai_degraded_mode = True`):
+
+| Layer | Weight |
+|-------|--------|
+| Deterministic | 0.55 |
+| Statistical | 0.45 |
+| Narrative | 0.00 |
+
+**Clamping**: Final output enforces `min(1.0, max(0.0, score))`.
+
+---
+
+#### [audit_logger.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/audit_logger.py)
+
+**Purpose**: Write immutable audit records for every fraud assessment. Uses the application's dedicated audit logger (`app.core.logging.get_audit_logger()`).
+
+**What it logs**:
+- `claim_id`, `final_score`, `privacy_mode`, `external_ai_used`, `ai_degraded_mode`, `config_version`, `baseline_version`, `timestamp`
+
+**What it NEVER logs**: Raw claim data, PII, policy numbers, amounts.
+
+---
+
+#### [adapter.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/adapter.py)
+
+**Purpose**: Convert the new frozen `FraudAssessmentResponse` into the legacy mutable `FraudAnalysisResult` schema used by `fraud_service.py` and existing tests.
+
+**Function**: `to_legacy(response) → FraudAnalysisResult`
+
+**Key mapping**:
+
+| Engine field | Legacy field |
+|-------------|-------------|
+| `deterministic_signals` | `deterministic_flags` |
+| `statistical_anomalies` | `statistical_flags` |
+| `behavioral_flags` | `behavioral_flags` |
+| `explanation` | `explanation` |
+| layer scores | `metadata.agent_scores` (preserves test contract) |
+
+---
+
+#### [orchestrator.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/orchestrator.py)
+
+**Purpose**: Coordinate the three layers, aggregator, and audit logger. Contains **zero business logic** — pure coordination.
+
+**Class**: `FraudEngineOrchestrator`
+
+**Method**: `analyze(claim_context, privacy_mode=None) → FraudAssessmentResponse`
+
+**Steps**:
+1. Run Layer 1 → get `DeterministicResult`
+2. Run Layer 2 → get `StatisticalResult`
+3. Compute preliminary score (for narrative context)
+4. Run Layer 3 (privacy-gated) → get `NarrativeResult`
+5. Aggregate all three → `AggregatedScore`
+6. Build explanation text from structured reasoning
+7. Log audit record
+8. Return frozen `FraudAssessmentResponse` with `config_version` embedded
+
+---
+
+#### [\_\_init\_\_.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py)
+
+Exports: `FraudEngineOrchestrator`, `FraudEngineConfig`
+
+---
+
+### Backward-Compatibility Wrappers — `app/ai_agents/`
+
+These files preserve the original class names and method signatures so that **no existing import needs to change**.
+
+| File | Class | Delegates to |
+|------|-------|-------------|
+| [orchestrator.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/orchestrator.py) | `FraudOrchestrator` | `FraudEngineOrchestrator` + `adapter.to_legacy()` |
+| [rule_agent.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/rule_agent.py) | `RuleAgent` | `layer1_deterministic.evaluate()` |
+| [anomaly_agent.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/anomaly_agent.py) | `AnomalyAgent` | `layer2_statistical.evaluate()` (filters to anomaly-only flags) |
+| [behavior_agent.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/behavior_agent.py) | `BehaviorAgent` | `layer2_statistical.evaluate()` (filters to behavioral-only flags) |
+| [explanation_agent.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/explanation_agent.py) | `ExplanationAgent` | Self-contained (uses config boundaries) |
+| [utils.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/utils.py) | *(functions)* | Unchanged — utility functions still available |
+
+---
+
+### Service & API Layer (unchanged)
+
+| File | Role | Changes |
+|------|------|---------|
+| [fraud_service.py](file:///e:/Projects/Insure-Flow-AI/app/services/fraud_service.py) | Orchestrates analysis, stores results, audit logs | **None** — imports unchanged |
+| [fraud.py (API)](file:///e:/Projects/Insure-Flow-AI/app/api/v1/fraud.py) | REST endpoint for fraud assessments | **None** — routes unchanged |
+| [fraud.py (schema)](file:///e:/Projects/Insure-Flow-AI/app/schemas/fraud.py) | `FraudAnalysisResult`, `FraudAssessmentResponse` | **None** — schemas unchanged |
+| [fraud.py (model)](file:///e:/Projects/Insure-Flow-AI/app/models/fraud.py) | `FraudAssessment` DB model | **None** — model unchanged |
+
+---
+
+## Production Safety Features
+
+| Feature | Implementation |
+|---------|---------------|
+| **Deterministic scoring** | No `random.choice()` anywhere — identical input → identical output |
+| **AI timeout fallback** | Layer 3 catches exceptions, sets `ai_degraded_mode = True`, aggregator renormalises weights |
+| **Default score on AI failure** | `NARRATIVE_DEFAULT_SCORE = 0.0` — conservative fallback |
+| **Score reproducibility** | `STATISTICAL_SEED` in config, all baselines versioned via `BASELINE_VERSION` |
+| **Config versioning** | `CONFIG_VERSION` embedded in every response — scores are traceable |
+| **Privacy by architecture** | Layer 3 cannot receive unsanitised data; `raw` mode requires explicit opt-in |
+| **No print statements** | All output through `logging` module |
+| **No hardcoded thresholds** | Every number lives in `config.py` |
+| **No circular imports** | Clean dependency graph: config → schemas → layers → aggregator → orchestrator |
+| **No global mutable state** | All schemas frozen; orchestrator is stateless |
+| **Immutable responses** | `FraudAssessmentResponse` uses `ConfigDict(frozen=True)` |
+| **Audit compliance** | Every assessment logged with metadata; raw claim data never logged |

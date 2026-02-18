@@ -9,7 +9,7 @@ import logging
 from typing import Any, Dict
 
 from app.ai_agents.fraud import config as cfg
-from app.ai_agents.fraud.schemas import StatisticalResult
+from app.schemas.fraud import StatisticalResult
 
 logger = logging.getLogger(__name__)
 

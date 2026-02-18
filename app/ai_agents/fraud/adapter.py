@@ -1,6 +1,6 @@
 """
 Legacy Adapter
-Converts the new frozen FraudAssessmentResponse into the mutable
+Converts the new frozen FraudEngineResponse into the mutable
 ``FraudAnalysisResult`` schema expected by ``fraud_service.py`` and
 existing tests.
 """
@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.ai_agents.fraud.schemas import FraudAssessmentResponse
+from app.schemas.fraud import FraudEngineResponse
 from app.schemas.fraud import FraudAnalysisResult
 
 
-def to_legacy(response: FraudAssessmentResponse) -> FraudAnalysisResult:
+def to_legacy(response: FraudEngineResponse) -> FraudAnalysisResult:
     """
     Map the frozen engine response to the legacy mutable schema.
 
@@ -26,7 +26,7 @@ def to_legacy(response: FraudAssessmentResponse) -> FraudAnalysisResult:
       (expected by existing tests)
 
     Args:
-        response: Immutable FraudAssessmentResponse from the engine.
+        response: Immutable FraudEngineResponse from the engine.
 
     Returns:
         Mutable FraudAnalysisResult compatible with existing API/test contracts.
