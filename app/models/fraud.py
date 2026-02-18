@@ -27,6 +27,9 @@ class FraudAssessment(BaseModel):
     # Human-readable explanation (CRITICAL for compliance)
     explanation_text = Column(Text, nullable=False)
     
+    # Feature snapshot for reproducibility (stores claim_context at analysis time)
+    feature_snapshot_json = Column(JSON, nullable=True)
+    
     # Relationship
     claim = relationship("Claim", back_populates="fraud_assessments")
     

@@ -1,0 +1,272 @@
+# InsureFlow-AI Code Gap Analysis
+
+Audit of every file in the fraud detection pipeline, tracing connections from API routes through to database storage.
+
+---
+
+## GAP 1: [fraud_service.py](file:///e:/Projects/Insure-Flow-AI/app/services/fraud_service.py) does not pass historical data to the engine (CRITICAL)
+
+**Problem**: Layer 2 ([layer2_statistical.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/layer2_statistical.py)) expects `recent_claim_count`, `prior_fraud_flags`, and `days_to_policy_expiry` in `claim_context`. But [fraud_service.py](file:///e:/Projects/Insure-Flow-AI/app/services/fraud_service.py) only passes 5 fields:
+
+```python
+# fraud_service.py line 48-54
+claim_context = {
+    "claim_id": str(claim.id),
+    "policy_number": claim.policy_number,
+    "claim_type": claim.claim_type,
+    "claim_amount": claim.claim_amount,
+    "user_id": str(claim.user_id),
+}
+```
+
+**Impact**: Layer 2 will **never** detect `UNUSUALLY_HIGH_CLAIM_FREQUENCY`, `PREVIOUS_FRAUD_FLAGS_ON_RECORD`, or `CLAIM_NEAR_POLICY_EXPIRY` because those keys default to `0` / `None` when missing.
+
+**Fix**: Add DB queries in [fraud_service.py](file:///e:/Projects/Insure-Flow-AI/app/services/fraud_service.py) to pre-fetch historical data:
+
+```python
+claim_context = {
+    "claim_id": str(claim.id),
+    "policy_number": claim.policy_number,
+    "claim_type": claim.claim_type,
+    "claim_amount": claim.claim_amount,
+    "user_id": str(claim.user_id),
+    # Layer 2 needs these:
+    "recent_claim_count": self._count_recent_claims(claim.user_id),
+    "prior_fraud_flags": self._count_prior_fraud_flags(claim.user_id),
+    "days_to_policy_expiry": self._days_to_policy_expiry(claim.policy_number),
+}
+```
+
+**Files to modify**: [fraud_service.py](file:///e:/Projects/Insure-Flow-AI/app/services/fraud_service.py)
+
+---
+
+## GAP 2: [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) triggers a circular import risk
+
+**Problem**: [app/ai_agents/fraud/__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) line 9:
+
+```python
+from app.ai_agents.fraud.orchestrator import FraudEngineOrchestrator
+```
+
+But [fraud/orchestrator.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/orchestrator.py) line 11 imports:
+
+```python
+from app.ai_agents.fraud import (
+    aggregator,
+    audit_logger,
+    config as cfg,
+    layer1_deterministic,
+    layer2_statistical,
+    layer3_narrative,
+)
+```
+
+This means `from app.ai_agents.fraud import aggregator` triggers [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py), which tries to import [FraudEngineOrchestrator](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/orchestrator.py#24-157), which in turn tries `from app.ai_agents.fraud import aggregator` again.
+
+**Impact**: Python's import system handles this with partial module objects, so it **works at runtime** because the orchestrator uses the submodules as attributes (not from the [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) exports). But it is fragile. Any future change to the [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) that accesses orchestrator attributes at import time will break.
+
+**Fix**: Change [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) to use lazy imports, or remove the [FraudEngineOrchestrator](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/orchestrator.py#24-157) import from [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) and have callers import directly from `app.ai_agents.fraud.orchestrator`.
+
+**Files to modify**: [\_\_init\_\_.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py)
+
+---
+
+## GAP 3: Name collision between engine and legacy [FraudAssessmentResponse](file:///e:/Projects/Insure-Flow-AI/app/schemas/fraud.py#9-34)
+
+**Problem**: Two different classes named [FraudAssessmentResponse](file:///e:/Projects/Insure-Flow-AI/app/schemas/fraud.py#9-34) exist:
+
+| Location | Purpose | Frozen? |
+|----------|---------|---------|
+| [app/schemas/fraud.py](file:///e:/Projects/Insure-Flow-AI/app/schemas/fraud.py) | Legacy API response schema (reads from DB ORM) | No |
+| [app/ai_agents/fraud/schemas.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/schemas.py) | Engine internal output | Yes (frozen) |
+
+They have **completely different fields**:
+
+```python
+# app/schemas/fraud.py (LEGACY)
+class FraudAssessmentResponse:
+    id, claim_id, fraud_score, deterministic_signals,
+    statistical_signals, explanation_text, created_at
+
+# app/ai_agents/fraud/schemas.py (ENGINE)
+class FraudAssessmentResponse:
+    fraud_score, deterministic_signals, statistical_anomalies,
+    behavioral_flags, structured_reasoning, explanation,
+    config_version, baseline_version, ai_degraded_mode, metadata
+```
+
+**Impact**: Currently works because they are imported from different paths and never used in the same file. But it causes confusion when reading the code, and will cause bugs if someone imports the wrong one.
+
+**Fix**: Rename the engine version to `FraudEngineResponse` to avoid ambiguity.
+
+**Files to modify**: [fraud/schemas.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/schemas.py), [fraud/orchestrator.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/orchestrator.py), [fraud/adapter.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/adapter.py)
+
+---
+
+## GAP 4: Missing [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) in package directories
+
+**Problem**: Several directories act as Python packages but may be missing [__init__.py](file:///e:/Projects/Insure-Flow-AI/app/ai_agents/fraud/__init__.py) files. Without these, Python won't recognise them as packages and imports will fail.
+
+Directories to check:
+- `app/ai_agents/` (should have `__init__.py`)
+- `app/compliance/`
+- `app/ocr/`
+- `app/speech/`
+- `app/utils/`
+- `app/services/`
+- `app/models/`
+- `app/schemas/`
+- `app/core/`
+- `app/api/v1/`
+- `app/db/`
+
+**Impact**: If any of these are missing `__init__.py`, imports will fail with `ModuleNotFoundError`.
+
+**Fix**: Verify and create empty `__init__.py` files where missing.
+
+---
+
+## GAP 5: Hardcoded fraud threshold `0.7` in `claim_service.py`
+
+**Problem**: `claim_service.py` line 220:
+
+```python
+if fraud_result.fraud_score >= 0.7:
+```
+
+But `app/config.py` has `FRAUD_THRESHOLD: float = 0.7` and the fraud engine has its own `RISK_LEVEL_BOUNDARIES["HIGH"] = 0.70`.
+
+**Impact**: If someone changes the threshold in `config.py`, the `claim_service.py` hardcoded `0.7` won't update. The system will behave inconsistently.
+
+**Fix**: Import from config:
+
+```python
+from app.config import settings
+if fraud_result.fraud_score >= settings.FRAUD_THRESHOLD:
+```
+
+**Files to modify**: [claim_service.py](file:///e:/Projects/Insure-Flow-AI/app/services/claim_service.py#L220)
+
+---
+
+## GAP 6: Wrapper agents call Layer 2 twice independently
+
+**Problem**: The old code path in `app/ai_agents/orchestrator.py` (wrapper) does NOT use `RuleAgent`, `AnomalyAgent`, or `BehaviorAgent`. It delegates directly to `FraudEngineOrchestrator`.
+
+However, if any code still calls `AnomalyAgent.detect_anomalies()` and `BehaviorAgent.analyze_behavior()` separately, each call independently runs `layer2_statistical.evaluate()`. This means Layer 2 executes twice with the same input, producing identical results (wasteful but not incorrect).
+
+**Impact**: Performance waste if wrapper agents are called directly. No correctness issue.
+
+**Fix**: No immediate action needed. The wrappers exist only for backward compatibility with tests that instantiate agents directly.
+
+---
+
+## GAP 7: API route returns wrong type on missing assessment
+
+**Problem**: `app/api/v1/fraud.py` line 34-35:
+
+```python
+if not assessment:
+    return {"detail": "No fraud assessment found for this claim"}
+```
+
+The route declares `response_model=FraudAssessmentResponse`, but when no assessment exists, it returns a plain dict. FastAPI will try to validate this dict against `FraudAssessmentResponse` and it will fail with a Pydantic validation error (missing required fields).
+
+**Impact**: API returns a 500 error instead of a proper 404 when no fraud assessment exists.
+
+**Fix**: Raise an HTTP exception:
+
+```python
+from fastapi import HTTPException
+if not assessment:
+    raise HTTPException(status_code=404, detail="No fraud assessment found")
+```
+
+**Files to modify**: [fraud.py](file:///e:/Projects/Insure-Flow-AI/app/api/v1/fraud.py#L34-L35)
+
+---
+
+## GAP 8: `behavioral_flags` not stored in DB
+
+**Problem**: `fraud_service.py` stores `deterministic_signals_json` and `statistical_signals_json` in the `FraudAssessment` model. But `behavioral_flags` from the analysis result are **not stored**.
+
+The `FraudAssessment` model only has:
+- `deterministic_signals_json` (JSON)
+- `statistical_signals_json` (JSON)
+- `explanation_text` (Text)
+
+**Impact**: Behavioral flags are lost after the analysis completes. They exist in the `FraudAnalysisResult` returned to the caller, but are never persisted to the database. If someone queries the assessment later, behavioral flags are gone.
+
+**Fix**: Either add a `behavioral_flags_json` column to the `FraudAssessment` model, or merge behavioral flags into `statistical_signals_json` since they come from the same Layer 2.
+
+**Files to modify**: [fraud.py (model)](file:///e:/Projects/Insure-Flow-AI/app/models/fraud.py), [fraud_service.py](file:///e:/Projects/Insure-Flow-AI/app/services/fraud_service.py#L60-L67)
+
+---
+
+## GAP 9: External AI stub always raises `NotImplementedError`
+
+**Problem**: `layer3_narrative.py` line 197:
+
+```python
+raise NotImplementedError(
+    "External AI integration is not yet implemented. "
+    "Set ENABLE_EXTERNAL_AI = False to use local-only mode."
+)
+```
+
+If someone sets `ENABLE_EXTERNAL_AI = True` in config, the system will:
+1. Attempt external AI call
+2. Catch the `NotImplementedError` as a generic `Exception`
+3. Set `ai_degraded_mode = True`
+4. Fall back to local narrative
+
+**Impact**: This actually works correctly -- the fallback catches it. But it logs a misleading warning: `"External AI call failed or timed out"` when really it was never implemented.
+
+**Fix**: Low priority. Change the log message to clarify, or add a more specific check before calling.
+
+---
+
+## WARNINGS (not blockers, but worth noting)
+
+### WARNING 1: `app.core.logging` imported at module level in `audit_logger.py`
+
+`audit_logger.py` lines 16-20:
+
+```python
+try:
+    from app.core.logging import get_audit_logger
+    _audit_logger = get_audit_logger()
+except Exception:
+    _audit_logger = logging.getLogger("audit.fraud_engine")
+```
+
+This runs `get_audit_logger()` at **import time**. The `get_audit_logger()` function returns `logging.getLogger('audit')`, which is fine. But `app.core.logging` also imports `from app.config import settings`, which requires `.env` to be populated. If `.env` is missing, this import chain will fail.
+
+The `try/except` handles this, but silently falls back to a different logger that won't write to the audit file.
+
+### WARNING 2: `app/config.py` settings loaded at import time
+
+`settings = Settings()` on line 65 runs at import time and requires environment variables. Any file that transitively imports `app.config` will fail if `.env` is not set. The fraud engine itself does NOT import `app.config` (it uses its own `fraud/config.py`), but `audit_logger.py` does via `app.core.logging`.
+
+### WARNING 3: `claim_service.py` does not auto-trigger fraud analysis on claim creation
+
+`claim_service.py` `create_claim()` (line 35-81) creates the claim and returns it, but does NOT call `trigger_fraud_analysis()`. Fraud analysis is only triggered when an admin explicitly calls the `/claims/{id}/analyze` endpoint. This means claims sit in `SUBMITTED` status until an admin manually triggers analysis.
+
+This may be intentional (human-in-loop), but if automatic analysis is desired, `create_claim()` should call `self.trigger_fraud_analysis(claim.id)` before returning.
+
+---
+
+## Summary Table
+
+| # | Gap | Severity | Blocks Runtime? |
+|---|-----|----------|-----------------|
+| 1 | Missing historical data in claim_context | CRITICAL | No (defaults to 0, but Layer 2 is silently useless) |
+| 2 | Circular import risk in __init__.py | LOW | No (works now, fragile) |
+| 3 | Name collision: two FraudAssessmentResponse | MEDIUM | No (causes confusion) |
+| 4 | Missing __init__.py files | CRITICAL | Yes (if missing, imports fail) |
+| 5 | Hardcoded 0.7 threshold | MEDIUM | No (behavioral inconsistency) |
+| 6 | Duplicate Layer 2 calls in wrappers | LOW | No (performance only) |
+| 7 | API returns dict instead of 404 | HIGH | Yes (500 error on missing assessment) |
+| 8 | behavioral_flags not persisted to DB | MEDIUM | No (data loss on read-back) |
+| 9 | External AI stub raises NotImplementedError | LOW | No (caught by fallback) |

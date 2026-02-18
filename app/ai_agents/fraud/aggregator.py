@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from app.ai_agents.fraud import config as cfg
-from app.ai_agents.fraud.schemas import (
+from app.schemas.fraud import (
     AggregatedScore,
     DeterministicResult,
     NarrativeResult,

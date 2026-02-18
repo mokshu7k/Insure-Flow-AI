@@ -16,7 +16,7 @@ from app.ai_agents.fraud import (
     layer2_statistical,
     layer3_narrative,
 )
-from app.ai_agents.fraud.schemas import FraudAssessmentResponse
+from app.schemas.fraud import FraudEngineResponse
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +31,14 @@ class FraudEngineOrchestrator:
         3. Layer 3 – AI narrative (privacy-gated)
         4. Aggregation (with degraded-mode handling)
         5. Audit logging
-        6. Return frozen FraudAssessmentResponse
+        6. Return frozen FraudEngineResponse
     """
 
     def analyze(
         self,
         claim_context: Dict[str, Any],
         privacy_mode: str | None = None,
-    ) -> FraudAssessmentResponse:
+    ) -> FraudEngineResponse:
         """
         Run the full fraud-analysis pipeline.
 
@@ -50,7 +50,7 @@ class FraudEngineOrchestrator:
             privacy_mode: Override for the privacy sanitiser mode.
 
         Returns:
-            Frozen FraudAssessmentResponse with ``config_version`` embedded.
+            Frozen FraudEngineResponse with ``config_version`` embedded.
         """
         claim_id = str(claim_context.get("claim_id", "unknown"))
         effective_privacy = privacy_mode or cfg.DEFAULT_PRIVACY_MODE
@@ -142,7 +142,7 @@ class FraudEngineOrchestrator:
             baseline_version=agg.baseline_version,
         )
 
-        return FraudAssessmentResponse(
+        return FraudEngineResponse(
             fraud_score=round(agg.final_score, 3),
             deterministic_signals=list(l1.signals),
             statistical_anomalies=list(l2.anomalies),
