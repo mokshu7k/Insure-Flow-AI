@@ -2,10 +2,9 @@
 Claim model
 """
 from sqlalchemy import Column, String, Float, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, GUID
 
 
 class Claim(BaseModel):
@@ -16,7 +15,7 @@ class Claim(BaseModel):
     __tablename__ = "claims"
     
     policy_number = Column(String(100), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(GUID(), ForeignKey("users.id"), nullable=False, index=True)
     claim_type = Column(String(50), nullable=False)  # HEALTH, MOTOR, REIMBURSEMENT
     claim_amount = Column(Float, nullable=False)
     

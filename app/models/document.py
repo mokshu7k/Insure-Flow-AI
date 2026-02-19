@@ -2,10 +2,9 @@
 Document model
 """
 from sqlalchemy import Column, String, ForeignKey, JSON
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, GUID
 
 
 class Document(BaseModel):
@@ -16,7 +15,7 @@ class Document(BaseModel):
     """
     __tablename__ = "documents"
     
-    claim_id = Column(UUID(as_uuid=True), ForeignKey("claims.id"), nullable=False, index=True)
+    claim_id = Column(GUID(), ForeignKey("claims.id"), nullable=False, index=True)
     file_path = Column(String(500), nullable=False)  # Encrypted storage reference
     document_type = Column(String(50), nullable=False)  # INVOICE, PRESCRIPTION, etc.
     

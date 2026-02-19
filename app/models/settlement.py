@@ -2,10 +2,9 @@
 Settlement model
 """
 from sqlalchemy import Column, String, Float, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, GUID
 
 
 class Settlement(BaseModel):
@@ -15,7 +14,7 @@ class Settlement(BaseModel):
     """
     __tablename__ = "settlements"
     
-    claim_id = Column(UUID(as_uuid=True), ForeignKey("claims.id"), nullable=False, index=True)
+    claim_id = Column(GUID(), ForeignKey("claims.id"), nullable=False, index=True)
     
     # External reference (from payment gateway)
     settlement_reference_id = Column(String(255), nullable=False, unique=True)

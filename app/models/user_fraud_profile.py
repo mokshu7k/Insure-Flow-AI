@@ -4,11 +4,10 @@ Materialized historical feature table for fraud detection.
 Pre-computed per-user statistics, updated on claim events.
 """
 from sqlalchemy import Column, Integer, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.models.base import Base
+from app.models.base import Base, GUID
 
 
 class UserFraudProfile(Base):
@@ -24,7 +23,7 @@ class UserFraudProfile(Base):
     __tablename__ = "user_fraud_profile"
 
     user_id = Column(
-        UUID(as_uuid=True),
+        GUID(),
         ForeignKey("users.id"),
         primary_key=True,
         index=True,

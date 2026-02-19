@@ -2,10 +2,10 @@
 Document Access Log model (HIPAA-aligned)
 """
 from sqlalchemy import Column, String, ForeignKey, DateTime
-from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime
+import uuid
 
-from app.models.base import Base
+from app.models.base import Base, GUID
 
 
 class DocumentAccessLog(Base):
@@ -15,10 +15,10 @@ class DocumentAccessLog(Base):
     """
     __tablename__ = "document_access_logs"
     
-    id = Column(UUID(as_uuid=True), primary_key=True, index=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4, index=True)
     
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False, index=True)
+    user_id = Column(GUID(), ForeignKey("users.id"), nullable=False, index=True)
+    document_id = Column(GUID(), ForeignKey("documents.id"), nullable=False, index=True)
     
     # Action: VIEW, DOWNLOAD, UPLOAD
     action = Column(String(50), nullable=False)

@@ -2,10 +2,9 @@
 Fraud Assessment model
 """
 from sqlalchemy import Column, String, Float, ForeignKey, Text, JSON
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, GUID
 
 
 class FraudAssessment(BaseModel):
@@ -15,7 +14,7 @@ class FraudAssessment(BaseModel):
     """
     __tablename__ = "fraud_assessments"
     
-    claim_id = Column(UUID(as_uuid=True), ForeignKey("claims.id"), nullable=False, index=True)
+    claim_id = Column(GUID(), ForeignKey("claims.id"), nullable=False, index=True)
     
     # Fraud score (0.0 to 1.0)
     fraud_score = Column(Float, nullable=False)
