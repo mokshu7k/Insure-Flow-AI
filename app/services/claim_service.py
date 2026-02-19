@@ -181,6 +181,16 @@ class ClaimService:
         
         self.db.commit()
         self.db.refresh(claim)
+
+        # Fraud feedback loop: when a claim is REJECTED with a high fraud
+        # score, count it as a confirmed fraud event on the user's profile
+        # so future assessments carry an accurate prior_fraud_flags count.
+        if (
+            status_update.status == "REJECTED"
+            and claim.fraud_score is not None
+            and claim.fraud_score >= 0.70
+        ):
+            self._record_confirmed_fraud(claim.user_id)
         
         # Audit log (CRITICAL for compliance)
         self.audit_service.log_action(
@@ -366,6 +376,32 @@ class ClaimService:
             self.db.add(profile)
         else:
             profile.prior_fraud_flags += 1
+            profile.last_updated = datetime.utcnow()
+        self.db.commit()
+
+    def _record_confirmed_fraud(self, user_id) -> None:
+        """
+        Increment ``confirmed_fraud_count`` when an admin REJECTS a claim with
+        a high fraud score.  This feeds back into the Layer 2 behavioral model
+        so that prior confirmed fraud events are counted accurately.
+        """
+        profile = (
+            self.db.query(UserFraudProfile)
+            .filter(UserFraudProfile.user_id == user_id)
+            .first()
+        )
+        if profile is None:
+            profile = UserFraudProfile(
+                user_id=user_id,
+                recent_claim_count=0,
+                prior_fraud_flags=1,
+                confirmed_fraud_count=1,
+                last_updated=datetime.utcnow(),
+            )
+            self.db.add(profile)
+        else:
+            profile.confirmed_fraud_count = (profile.confirmed_fraud_count or 0) + 1
+            profile.prior_fraud_flags += 1   # also bump soft flag count
             profile.last_updated = datetime.utcnow()
         self.db.commit()
     

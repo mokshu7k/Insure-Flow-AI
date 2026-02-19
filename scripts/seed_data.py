@@ -9,7 +9,8 @@ import sys
 import os
 import uuid
 import hashlib
-from datetime import datetime
+from datetime import date, datetime
+from sqlalchemy import text
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -158,42 +159,49 @@ def seed_claims(db):
             id=CLAIM_IDS["c1"], policy_number="POL-2026-001234",
             user_id=USER_IDS["john"], claim_type="HEALTH",
             claim_amount=125000, status="APPROVED", fraud_score=0.12,
+            policy_expiry_date=date(2027, 1, 15),
             created_at=dt("2026-01-15T10:30:00"), updated_at=dt("2026-01-18T14:00:00"),
         ),
         Claim(
             id=CLAIM_IDS["c2"], policy_number="POL-2026-002345",
             user_id=USER_IDS["jane"], claim_type="MOTOR",
             claim_amount=85000, status="FRAUD_ANALYZED", fraud_score=0.45,
+            policy_expiry_date=date(2027, 1, 20),
             created_at=dt("2026-01-20T09:00:00"), updated_at=dt("2026-01-22T11:00:00"),
         ),
         Claim(
             id=CLAIM_IDS["c3"], policy_number="POL-2026-003456",
             user_id=USER_IDS["john"], claim_type="HEALTH",
             claim_amount=250000, status="MANUAL_REVIEW_REQUIRED", fraud_score=0.78,
+            policy_expiry_date=date(2026, 2, 10),  # near-expiry: triggers CLAIM_NEAR_POLICY_EXPIRY
             created_at=dt("2026-01-25T15:00:00"), updated_at=dt("2026-01-26T10:00:00"),
         ),
         Claim(
             id=CLAIM_IDS["c4"], policy_number="POL-2026-004567",
             user_id=USER_IDS["jane"], claim_type="REIMBURSEMENT",
             claim_amount=32000, status="SUBMITTED", fraud_score=None,
+            policy_expiry_date=date(2027, 2, 1),
             created_at=dt("2026-02-01T08:00:00"), updated_at=dt("2026-02-01T08:00:00"),
         ),
         Claim(
             id=CLAIM_IDS["c5"], policy_number="POL-2026-005678",
             user_id=USER_IDS["john"], claim_type="HEALTH",
             claim_amount=175000, status="REJECTED", fraud_score=0.92,
+            policy_expiry_date=date(2027, 2, 5),
             created_at=dt("2026-02-05T12:00:00"), updated_at=dt("2026-02-07T16:00:00"),
         ),
         Claim(
             id=CLAIM_IDS["c6"], policy_number="POL-2026-006789",
             user_id=USER_IDS["jane"], claim_type="MOTOR",
             claim_amount=45000, status="SETTLED", fraud_score=0.05,
+            policy_expiry_date=date(2027, 2, 8),
             created_at=dt("2026-02-08T10:00:00"), updated_at=dt("2026-02-12T09:00:00"),
         ),
         Claim(
             id=CLAIM_IDS["c7"], policy_number="POL-2026-007890",
             user_id=USER_IDS["john"], claim_type="HEALTH",
             claim_amount=310000, status="MANUAL_REVIEW_REQUIRED", fraud_score=0.68,
+            policy_expiry_date=date(2027, 2, 10),
             created_at=dt("2026-02-10T14:30:00"), updated_at=dt("2026-02-11T08:00:00"),
         ),
         Claim(
@@ -252,54 +260,71 @@ def seed_fraud_assessments(db):
     assessments = [
         FraudAssessment(
             id=FRAUD_IDS["fa1"], claim_id=CLAIM_IDS["c1"],
-            fraud_score=0.12,
+            fraud_score=0.12, risk_level="MINIMAL",
             deterministic_signals_json=[],
             statistical_signals_json=["Claim amount within normal range"],
+            behavioral_flags_json=[],
+            document_flags_json=[],
+            network_flags_json=[],
             explanation_text="Low risk. Amount and pattern consistent with historical data.",
-            feature_snapshot_json={"claim_amount": 125000, "claim_type": "HEALTH", "recent_claim_count": 0},
+            feature_snapshot_json={"claim_type": "HEALTH", "recent_claim_count": 0},
+            config_version="2.0.0", baseline_version="1.0.0",
+            ai_degraded_mode=False, ml_model_used=False,
             created_at=dt("2026-01-16T10:00:00"), updated_at=dt("2026-01-16T10:00:00"),
         ),
         FraudAssessment(
             id=FRAUD_IDS["fa3"], claim_id=CLAIM_IDS["c3"],
-            fraud_score=0.78,
+            fraud_score=0.78, risk_level="HIGH",
             deterministic_signals_json=[
-                "Duplicate hospital registration number",
-                "Treatment dates overlap with another claim",
+                "DUPLICATE_REGISTRATION_NUMBER",
+                "OVERLAPPING_TREATMENT_DATES",
             ],
             statistical_signals_json=[
-                "Claim amount 2.5x higher than average",
-                "Unusual claim frequency",
+                "AMOUNT_STATISTICAL_OUTLIER",
+                "UNUSUALLY_HIGH_CLAIM_FREQUENCY",
             ],
+            behavioral_flags_json=["UNUSUALLY_HIGH_CLAIM_FREQUENCY", "CLAIM_NEAR_POLICY_EXPIRY"],
+            document_flags_json=[],
+            network_flags_json=[],
             explanation_text="High risk. Multiple deterministic signals including duplicate registration and overlapping dates.",
-            feature_snapshot_json={"claim_amount": 250000, "claim_type": "HEALTH", "recent_claim_count": 1},
+            feature_snapshot_json={"claim_type": "HEALTH", "recent_claim_count": 1},
+            config_version="2.0.0", baseline_version="1.0.0",
+            ai_degraded_mode=False, ml_model_used=False,
             created_at=dt("2026-01-26T08:00:00"), updated_at=dt("2026-01-26T08:00:00"),
         ),
         FraudAssessment(
             id=FRAUD_IDS["fa5"], claim_id=CLAIM_IDS["c5"],
-            fraud_score=0.92,
+            fraud_score=0.92, risk_level="VERY_HIGH",
             deterministic_signals_json=[
-                "Document OCR confidence below threshold (42%)",
-                "Provider not in network",
-                "Invalid hospital registration",
+                "INVALID_PROVIDER_REGISTRATION",
+                "PROVIDER_NOT_IN_NETWORK",
             ],
             statistical_signals_json=[
-                "Claim amount in 99th percentile",
-                "First claim within 30 days of policy",
+                "AMOUNT_STATISTICAL_OUTLIER",
             ],
+            behavioral_flags_json=["UNUSUALLY_HIGH_CLAIM_FREQUENCY", "PREVIOUS_FRAUD_FLAGS_ON_RECORD"],
+            document_flags_json=["LOW_OCR_CONFIDENCE", "MISSING_REQUIRED_DOCUMENT"],
+            network_flags_json=["HIGH_RISK_PROVIDER"],
             explanation_text="Very high risk. Document authenticity concerns and out-of-network provider.",
-            feature_snapshot_json={"claim_amount": 175000, "claim_type": "HEALTH", "recent_claim_count": 2},
+            feature_snapshot_json={"claim_type": "HEALTH", "recent_claim_count": 2},
+            config_version="2.0.0", baseline_version="1.0.0",
+            ai_degraded_mode=False, ml_model_used=False,
             created_at=dt("2026-02-06T10:00:00"), updated_at=dt("2026-02-06T10:00:00"),
         ),
         FraudAssessment(
             id=FRAUD_IDS["fa7"], claim_id=CLAIM_IDS["c7"],
-            fraud_score=0.68,
-            deterministic_signals_json=["Treatment duration exceeds policy limits"],
+            fraud_score=0.68, risk_level="HIGH",
+            deterministic_signals_json=["TREATMENT_DURATION_EXCEEDS_LIMITS"],
             statistical_signals_json=[
-                "Provider has higher-than-average claims",
-                "Submitted outside business hours",
+                "PROVIDER_CLAIM_VOLUME_ANOMALY",
             ],
+            behavioral_flags_json=["UNUSUALLY_HIGH_CLAIM_FREQUENCY", "PREVIOUS_FRAUD_FLAGS_ON_RECORD"],
+            document_flags_json=[],
+            network_flags_json=["PROVIDER_FRAUD_CLUSTER"],
             explanation_text="Elevated risk. Treatment duration exceeds limits. Flagged for manual review.",
-            feature_snapshot_json={"claim_amount": 310000, "claim_type": "HEALTH", "recent_claim_count": 3},
+            feature_snapshot_json={"claim_type": "HEALTH", "recent_claim_count": 3},
+            config_version="2.0.0", baseline_version="1.0.0",
+            ai_degraded_mode=False, ml_model_used=False,
             created_at=dt("2026-02-11T06:00:00"), updated_at=dt("2026-02-11T06:00:00"),
         ),
     ]
@@ -392,14 +417,20 @@ def seed_fraud_profiles(db):
     profiles = [
         UserFraudProfile(
             user_id=USER_IDS["john"],
-            recent_claim_count=4,   # c1, c3, c5, c7
-            prior_fraud_flags=2,    # c3 (0.78), c5 (0.92)
+            recent_claim_count=4,        # c1, c3, c5, c7
+            prior_fraud_flags=2,         # c3 (0.78), c5 (0.92)
+            confirmed_fraud_count=1,     # c5 was REJECTED with score 0.92
+            last_claim_date=dt("2026-02-10T14:30:00"),
+            total_claim_amount_90d=860000.0,  # 125k+250k+175k+310k
             last_updated=dt("2026-02-11T06:00:00"),
         ),
         UserFraudProfile(
             user_id=USER_IDS["jane"],
-            recent_claim_count=4,   # c2, c4, c6, c8
+            recent_claim_count=4,        # c2, c4, c6, c8
             prior_fraud_flags=0,
+            confirmed_fraud_count=0,
+            last_claim_date=dt("2026-02-13T11:00:00"),
+            total_claim_amount_90d=162000.0,  # 85k+32k+45k (c8 TBD)
             last_updated=dt("2026-02-14T11:00:00"),
         ),
     ]
@@ -425,18 +456,28 @@ def main():
             print("   Aborted.")
             db.close()
             return
-        # Clear tables in dependency order
+        
+        # Clear all data using TRUNCATE CASCADE
+        # This requires temporarily disabling the audit_logs trigger for development
         print("\n  Clearing existing data...")
-        db.query(AuditLog).delete()
-        db.query(Settlement).delete()
-        db.query(FraudAssessment).delete()
-        db.query(Document).delete()
-        db.query(UserFraudProfile).delete()
-        db.query(UserConsent).delete()
-        db.query(Claim).delete()
-        db.query(User).delete()
-        db.commit()
-        print("  ✓ All data cleared\n")
+        try:
+            # Disable trigger on audit_logs temporarily
+            db.execute(text("ALTER TABLE audit_logs DISABLE TRIGGER audit_logs_immutable;"))
+            
+            # Truncate all tables with CASCADE to handle foreign keys
+            db.execute(text("TRUNCATE TABLE audit_logs, settlements, fraud_assessments, documents, "
+                          "user_fraud_profile, user_consents, claims, users CASCADE;"))
+            
+            # Re-enable trigger
+            db.execute(text("ALTER TABLE audit_logs ENABLE TRIGGER audit_logs_immutable;"))
+            
+            db.commit()
+            print("  ✓ All data cleared\n")
+        except Exception as e:
+            print(f"  ✗ Error clearing data: {e}")
+            db.rollback()
+            db.close()
+            return
 
     try:
         print("\nSeeding data...\n")

@@ -4,7 +4,7 @@ Compliance-First Insurance Claim Intelligence Platform
 """
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import logging
 
 from app.config import settings
@@ -13,6 +13,9 @@ from app.core.exceptions import InsureFlowException
 from app.api.router import api_router
 from app.db.session import engine
 from app.models.base import Base
+
+# Ensure Prometheus metrics are registered at import time
+import app.ai_agents.fraud.metrics  # noqa: F401
 
 # Setup logging
 setup_logging()
@@ -86,6 +89,20 @@ async def health_check():
         "service": "InsureFlow-AI",
         "version": "1.0.0"
     }
+
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """
+    Prometheus scrape endpoint.
+    Exposes fraud-engine and application metrics in the Prometheus text format.
+    Should be protected from public access in production (e.g. via ingress).
+    """
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 # Include API router

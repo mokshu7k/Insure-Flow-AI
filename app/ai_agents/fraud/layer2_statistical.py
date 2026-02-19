@@ -6,6 +6,7 @@ Deterministic seeding for reproducibility.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from app.ai_agents.fraud import config as cfg
@@ -21,8 +22,8 @@ def evaluate(
     Detect statistical anomalies in a claim.
 
     All historical data (``recent_claim_count``, ``prior_fraud_flags``,
-    ``days_to_policy_expiry``) must be **pre-fetched** and provided in
-    ``claim_context`` by the caller – this layer never touches the DB.
+    ``days_to_policy_expiry``, ``last_claim_date``) must be **pre-fetched**
+    and provided in ``claim_context`` by the caller – this layer never touches the DB.
 
     Args:
         claim_context: Claim data dict enriched with historical fields.
@@ -74,6 +75,26 @@ def evaluate(
     if days_to_expiry is not None and days_to_expiry <= cfg.DAYS_TO_EXPIRY_THRESHOLD:
         anomalies.append("CLAIM_NEAR_POLICY_EXPIRY")
         raw_score += cfg.NEAR_EXPIRY_RISK_SCORE
+
+    # ----- Behavioral: claim after long dormancy -----
+    last_claim_date = claim_context.get("last_claim_date")
+    if last_claim_date is not None:
+        # last_claim_date may arrive as datetime or ISO string
+        if isinstance(last_claim_date, str):
+            try:
+                last_claim_date = datetime.fromisoformat(last_claim_date)
+            except ValueError:
+                last_claim_date = None
+
+        if last_claim_date is not None:
+            # Make both tz-aware for comparison
+            now = datetime.now(timezone.utc)
+            if last_claim_date.tzinfo is None:
+                last_claim_date = last_claim_date.replace(tzinfo=timezone.utc)
+            days_since_last = (now - last_claim_date).days
+            if days_since_last >= cfg.DORMANCY_DAYS_THRESHOLD:
+                anomalies.append("CLAIM_AFTER_LONG_DORMANCY")
+                raw_score += cfg.DORMANCY_RISK_SCORE
 
     # Normalise to [0, 1]
     score = min(1.0, max(0.0, raw_score))

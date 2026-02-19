@@ -74,9 +74,17 @@ export interface FraudAssessment {
     id: string;
     claim_id: string;
     fraud_score: number;
+    risk_level: string | null;
     deterministic_signals: string[];
     statistical_signals: string[];
+    behavioral_flags: string[];
+    document_flags: string[];
+    network_flags: string[];
     explanation_text: string;
+    config_version: string | null;
+    baseline_version: string | null;
+    ai_degraded_mode: boolean | null;
+    ml_model_used: boolean | null;
     created_at: string;
 }
 

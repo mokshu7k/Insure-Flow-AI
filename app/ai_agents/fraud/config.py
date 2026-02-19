@@ -9,19 +9,23 @@ from typing import Dict
 # ---------------------------------------------------------------------------
 # Versioning – embedded in every FraudAssessmentResponse for traceability
 # ---------------------------------------------------------------------------
-CONFIG_VERSION: str = "1.0.0"
+CONFIG_VERSION: str = "2.0.0"
 BASELINE_VERSION: str = "1.0.0"   # tracks statistical baseline data version
 
 # ---------------------------------------------------------------------------
 # Layer Weights (must sum to 1.0)
 # ---------------------------------------------------------------------------
-WEIGHT_DETERMINISTIC: float = 0.40
-WEIGHT_STATISTICAL: float = 0.35
-WEIGHT_NARRATIVE: float = 0.25
+WEIGHT_DETERMINISTIC: float = 0.30
+WEIGHT_STATISTICAL: float = 0.25
+WEIGHT_NARRATIVE: float = 0.15
+WEIGHT_DOCUMENT: float = 0.15
+WEIGHT_NETWORK: float = 0.10
+WEIGHT_ML: float = 0.05
 
-# Degraded-mode weights (used when AI times out; narrative weight → 0)
-DEGRADED_WEIGHT_DETERMINISTIC: float = 0.55
-DEGRADED_WEIGHT_STATISTICAL: float = 0.45
+# Degraded-mode weights (used when AI / ML times out; only L1+L2+L4 remain)
+DEGRADED_WEIGHT_DETERMINISTIC: float = 0.45
+DEGRADED_WEIGHT_STATISTICAL: float = 0.35
+DEGRADED_WEIGHT_DOCUMENT: float = 0.20
 
 # ---------------------------------------------------------------------------
 # Layer 1 – Deterministic thresholds
@@ -55,6 +59,7 @@ Z_SCORE_ANOMALY_CONTRIBUTION: float = 0.30
 HIGH_CLAIM_FREQUENCY_THRESHOLD: int = 3
 PRIOR_FRAUD_FLAGS_THRESHOLD: int = 1
 DAYS_TO_EXPIRY_THRESHOLD: int = 30
+DORMANCY_DAYS_THRESHOLD: int = 365   # >1 year of inactivity triggers CLAIM_AFTER_LONG_DORMANCY
 
 FREQUENCY_RISK_SCORE: float = 0.35
 PRIOR_FRAUD_RISK_SCORE: float = 0.40
@@ -71,11 +76,48 @@ AI_TIMEOUT_SECONDS: float = 10.0
 NARRATIVE_DEFAULT_SCORE: float = 0.0   # fallback score when AI fails
 
 # Ollama (self-hosted LLM, zero data egress)
-# Set EXTERNAL_AI_BASE_URL to your Ollama instance, e.g. http://localhost:11434
-# Set EXTERNAL_AI_MODEL to any model you have pulled, e.g. mistral, llama3, gemma2
 EXTERNAL_AI_BASE_URL: str = "http://localhost:11434"
-EXTERNAL_AI_MODEL: str = "mistral"    # model must be pulled: `ollama pull mistral`
-EXTERNAL_AI_MAX_TOKENS: int = 512      # keep response short and structured
+EXTERNAL_AI_MODEL: str = "mistral"
+EXTERNAL_AI_MAX_TOKENS: int = 512
+
+# Circuit breaker: open after N consecutive failures, reset after RESET_TIMEOUT seconds
+CIRCUIT_BREAKER_FAIL_MAX: int = 3
+CIRCUIT_BREAKER_RESET_TIMEOUT: int = 60   # seconds
+
+# ---------------------------------------------------------------------------
+# Layer 4 – Document Fraud
+# ---------------------------------------------------------------------------
+OCR_CONFIDENCE_THRESHOLD: float = 0.60        # below this → low-confidence signal
+DOCUMENT_DATE_DRIFT_DAYS: int = 30            # incident date vs doc creation date tolerance
+DUPLICATE_INVOICE_SCORE: float = 0.50
+LOW_OCR_CONFIDENCE_SCORE: float = 0.25
+DOCUMENT_DATE_INCONSISTENCY_SCORE: float = 0.30
+MISSING_REQUIRED_DOCUMENT_SCORE: float = 0.20
+
+REQUIRED_DOCUMENTS_BY_TYPE: Dict[str, list] = {
+    "HEALTH": ["INVOICE", "DISCHARGE_SUMMARY"],
+    "MOTOR":  ["ESTIMATE", "POLICE_REPORT"],
+    "REIMBURSEMENT": ["INVOICE"],
+}
+
+# ---------------------------------------------------------------------------
+# Layer 5 – Network / Graph Analysis
+# ---------------------------------------------------------------------------
+PROVIDER_HIGH_CLAIM_COUNT_THRESHOLD: int = 5    # N claims in window
+PROVIDER_HIGH_CLAIM_WINDOW_DAYS: int = 30
+PROVIDER_FRAUD_RATE_THRESHOLD: float = 0.40     # >40 % of provider's claims are high-risk
+HIGH_RISK_PROVIDER_SCORE: float = 0.40
+SHARED_PROVIDER_CLUSTER_SCORE: float = 0.25
+
+# ---------------------------------------------------------------------------
+# Layer 6 – ML (Isolation Forest)
+# ---------------------------------------------------------------------------
+ML_MODEL_PATH: str = "models/fraud_isolation_forest.pkl"
+ML_SCALER_PATH: str = "models/fraud_scaler.pkl"
+ML_CONTAMINATION: float = 0.10        # expected ~10 % anomalies in training data
+ML_N_ESTIMATORS: int = 200
+ML_RANDOM_STATE: int = 42
+ML_ANOMALY_SCORE_SCALE: float = 0.50  # max contribution from ML layer to fraud score
 
 # ---------------------------------------------------------------------------
 # Privacy

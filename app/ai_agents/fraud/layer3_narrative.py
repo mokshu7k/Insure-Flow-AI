@@ -24,6 +24,8 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from functools import lru_cache
 from typing import Any, Dict, List
 
+import pybreaker
+
 from app.ai_agents.fraud import config as cfg
 from app.ai_agents.fraud import privacy
 from app.schemas.fraud import NarrativeResult
@@ -32,6 +34,14 @@ logger = logging.getLogger(__name__)
 
 # Single reusable executor — avoids spawning a thread per request
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="fraud_ai")
+
+# Circuit breaker: opens after FAIL_MAX consecutive failures so subsequent
+# requests bypass the Ollama call immediately (no AI_TIMEOUT_SECONDS wait).
+_AI_CIRCUIT_BREAKER = pybreaker.CircuitBreaker(
+    fail_max=cfg.CIRCUIT_BREAKER_FAIL_MAX,
+    reset_timeout=cfg.CIRCUIT_BREAKER_RESET_TIMEOUT,
+    name="ollama_fraud_ai",
+)
 
 # Sorted risk boundaries: highest threshold first for correct classification
 _SORTED_BOUNDARIES: list[tuple[str, float]] = sorted(
@@ -59,16 +69,26 @@ def _classify_risk(score: float) -> str:
 # Flag humaniser
 # ---------------------------------------------------------------------------
 _FLAG_DESCRIPTIONS: Dict[str, str] = {
-    "AMOUNT_EXCEEDS_THRESHOLD":      "Claim amount exceeds typical threshold for this claim type",
-    "SUSPICIOUSLY_ROUND_AMOUNT":     "Claim amount is a suspiciously round number",
-    "INVALID_POLICY_FORMAT":         "Policy number format appears invalid",
-    "AMOUNT_STATISTICAL_OUTLIER":    "Claim amount is a statistical outlier (>2.5 standard deviations)",
-    "HIGH_RISK_PROVIDER_PATTERN":    "Provider has exhibited high-risk patterns in historical data",
-    "TEMPORAL_CLUSTERING_DETECTED":  "Multiple claims detected in short time window",
-    "UNUSUALLY_HIGH_CLAIM_FREQUENCY":"User has unusually high claim frequency",
-    "CLAIM_AFTER_LONG_DORMANCY":     "First claim after extended period of policy inactivity",
-    "CLAIM_NEAR_POLICY_EXPIRY":      "Claim submitted close to policy expiration date",
-    "PREVIOUS_FRAUD_FLAGS_ON_RECORD":"User has previous fraud flags in historical records",
+    # Layer 1 – Deterministic
+    "AMOUNT_EXCEEDS_THRESHOLD":          "Claim amount exceeds typical threshold for this claim type",
+    "SUSPICIOUSLY_ROUND_AMOUNT":         "Claim amount is a suspiciously round number",
+    "INVALID_POLICY_FORMAT":             "Policy number format appears invalid",
+    # Layer 2 – Statistical / Behavioral
+    "AMOUNT_STATISTICAL_OUTLIER":        "Claim amount is a statistical outlier (>2.5 standard deviations)",
+    "HIGH_RISK_PROVIDER_PATTERN":        "Provider has exhibited high-risk patterns in historical data",
+    "TEMPORAL_CLUSTERING_DETECTED":      "Multiple claims detected in short time window",
+    "UNUSUALLY_HIGH_CLAIM_FREQUENCY":    "User has unusually high claim frequency",
+    "CLAIM_AFTER_LONG_DORMANCY":         "First claim after extended period of policy inactivity",
+    "CLAIM_NEAR_POLICY_EXPIRY":          "Claim submitted close to policy expiration date",
+    "PREVIOUS_FRAUD_FLAGS_ON_RECORD":    "User has previous fraud flags in historical records",
+    # Layer 4 – Document
+    "DUPLICATE_INVOICE_NUMBER":          "Invoice number matches a previously submitted claim",
+    "LOW_OCR_CONFIDENCE":                "Document OCR confidence is below acceptable threshold",
+    "DOCUMENT_DATE_INCONSISTENCY":       "Document creation date is inconsistent with incident date",
+    "MISSING_REQUIRED_DOCUMENT":         "Required document type is absent for this claim category",
+    # Layer 5 – Network / Graph
+    "HIGH_RISK_PROVIDER":                "Provider is associated with an elevated number of high-risk claims",
+    "PROVIDER_FRAUD_CLUSTER":            "Provider appears in a cluster of suspected fraudulent claims",
 }
 
 
@@ -135,7 +155,7 @@ def evaluate(
     if cfg.ENABLE_EXTERNAL_AI:
         try:
             future = _EXECUTOR.submit(
-                _call_external_ai,
+                _call_external_ai_breaker,
                 sanitized_context,
                 deterministic_signals,
                 statistical_anomalies,
@@ -148,6 +168,11 @@ def evaluate(
             logger.warning(
                 "External AI timed out after %.1fs – falling back to local narrative.",
                 cfg.AI_TIMEOUT_SECONDS,
+            )
+            ai_degraded_mode = True
+        except pybreaker.CircuitBreakerError:
+            logger.warning(
+                "Ollama circuit breaker OPEN – skipping AI call and using local narrative."
             )
             ai_degraded_mode = True
         except Exception as exc:
@@ -250,6 +275,27 @@ def _build_ollama_prompt(
         "  recommendation: one sentence action recommendation\n\n"
         "Do NOT include any text outside the JSON object.\n\n"
         f"Claim data:\n{json.dumps(payload, indent=2)}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Circuit-breaker-wrapped external AI call
+# ---------------------------------------------------------------------------
+@_AI_CIRCUIT_BREAKER
+def _call_external_ai_breaker(
+    sanitized_context: Dict[str, Any],
+    deterministic_signals: List[str],
+    statistical_anomalies: List[str],
+    behavioral_flags: List[str],
+    preliminary_score: float,
+) -> NarrativeResult:
+    """Thin wrapper so pybreaker tracks successes/failures on the Ollama call."""
+    return _call_external_ai(
+        sanitized_context,
+        deterministic_signals,
+        statistical_anomalies,
+        behavioral_flags,
+        preliminary_score,
     )
 
 
