@@ -11,11 +11,23 @@ const statusConfig: Record<
         text: "text-blue-700 dark:text-blue-300",
         dot: "bg-blue-500",
     },
+    OCR_PROCESSED: {
+        label: "Documents Processed",
+        bg: "bg-cyan-50 dark:bg-cyan-950/30",
+        text: "text-cyan-700 dark:text-cyan-300",
+        dot: "bg-cyan-500",
+    },
     UNDER_REVIEW: {
         label: "Under Review",
         bg: "bg-amber-50 dark:bg-amber-950/30",
         text: "text-amber-700 dark:text-amber-300",
         dot: "bg-amber-500",
+    },
+    FRAUD_ANALYZED: {
+        label: "Analyzed",
+        bg: "bg-indigo-50 dark:bg-indigo-950/30",
+        text: "text-indigo-700 dark:text-indigo-300",
+        dot: "bg-indigo-500",
     },
     APPROVED: {
         label: "Approved",

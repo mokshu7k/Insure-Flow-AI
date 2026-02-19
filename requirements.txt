@@ -21,6 +21,10 @@ cryptography==41.0.7
 python-dotenv==1.0.0
 
 # ── OCR & Image Processing ────────────────────────────
+<<<<<<< Updated upstream
+=======
+pytesseract>=0.3.10
+>>>>>>> Stashed changes
 numpy==1.26.4
 
 # ── Speech-to-Text (optional — uncomment if needed) ──

@@ -8,7 +8,7 @@ import { qrService } from "@/services/qrService";
 import type { QRAuthorizationResponse } from "@/types";
 import { QRCodeSVG } from "qrcode.react";
 import { Loader2, QrCode, CheckCircle2, Clock, Shield } from "lucide-react";
-import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { formatCurrency, formatDateTime, extractErrorMessage } from "@/lib/utils";
 
 const schema = z.object({
     claim_id: z.string().min(1, "Claim ID is required"),
@@ -45,10 +45,7 @@ export default function GenerateQRPage() {
             const res = await qrService.createAuthorization(data);
             setResult(res);
         } catch (err: unknown) {
-            const msg =
-                (err as { response?: { data?: { detail?: string } } })?.response?.data
-                    ?.detail || "Failed to generate QR";
-            setError(msg);
+            setError(extractErrorMessage(err, "Failed to generate QR"));
         } finally {
             setLoading(false);
         }

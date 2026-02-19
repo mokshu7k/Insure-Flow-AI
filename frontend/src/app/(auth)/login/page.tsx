@@ -46,6 +46,9 @@ export default function LoginPage() {
         setLoading(true);
         try {
             const tokens = await authService.login(data);
+            // Store tokens BEFORE calling getMe() so the auth header is set
+            localStorage.setItem("access_token", tokens.access_token);
+            localStorage.setItem("refresh_token", tokens.refresh_token);
             const user = await authService.getMe();
             login(user, tokens.access_token, tokens.refresh_token);
             router.push("/dashboard");

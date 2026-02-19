@@ -198,6 +198,95 @@ class ClaimService:
         
         return claim
     
+    def update_claim_amount(
+        self,
+        claim_id: uuid.UUID,
+        amount: float,
+        user: User
+    ) -> Claim:
+        """
+        Update claim amount (for draft claims)
+        
+        Only claim owner can update amount before final submission.
+        Automatically triggers fraud analysis after amount is set.
+        
+        Args:
+            claim_id: Claim ID
+            amount: New claim amount
+            user: User performing update
+        
+        Returns:
+            Updated Claim object
+        """
+        claim = self.db.query(Claim).filter(Claim.id == claim_id).first()
+        
+        if not claim:
+            raise ClaimNotFoundException(str(claim_id))
+        
+        # Only owner can update
+        if str(claim.user_id) != str(user.id):
+            raise UnauthorizedClaimAccessException()
+        
+        # Only allow update if claim is in SUBMITTED or OCR_PROCESSED status
+        if claim.status not in [ClaimStatus.SUBMITTED.value, ClaimStatus.OCR_PROCESSED.value]:
+            raise InvalidClaimStatusException(
+                f"Cannot update amount for claim in status: {claim.status}"
+            )
+        
+        # Update amount
+        old_amount = claim.claim_amount
+        claim.claim_amount = amount
+        
+        # Move to UNDER_REVIEW status
+        claim.status = ClaimStatus.UNDER_REVIEW.value
+        
+        self.db.commit()
+        self.db.refresh(claim)
+        
+        # Audit log
+        self.audit_service.log_action(
+            actor_id=user.id,
+            action_type=AuditAction.CLAIM_SUBMITTED,
+            entity_type="CLAIM",
+            entity_id=claim.id,
+            metadata={
+                "action": "amount_updated_and_submitted",
+                "old_amount": old_amount,
+                "new_amount": amount
+            }
+        )
+        
+        # Automatically trigger fraud analysis (results only visible to admin)
+        try:
+            self._run_fraud_analysis_async(claim)
+        except Exception as e:
+            # Log error but don't fail the submission
+            import logging
+            logging.getLogger(__name__).error(f"Fraud analysis failed: {e}")
+        
+        return claim
+    
+    def _run_fraud_analysis_async(self, claim: Claim) -> None:
+        """
+        Run fraud analysis on the claim.
+        Results are stored but not shown to customer.
+        """
+        fraud_result = self.fraud_service.analyze_claim(claim)
+        
+        # Update claim with fraud score
+        claim.fraud_score = fraud_result.fraud_score
+        
+        # Update status based on fraud score
+        if fraud_result.fraud_score >= 0.7:
+            claim.status = ClaimStatus.MANUAL_REVIEW_REQUIRED.value
+            # Increment prior_fraud_flags for high-risk claims
+            self._update_user_profile_on_fraud(claim.user_id)
+        else:
+            claim.status = ClaimStatus.FRAUD_ANALYZED.value
+        
+        self.db.commit()
+        self.db.refresh(claim)
+    
     def trigger_fraud_analysis(self, claim_id: uuid.UUID) -> Claim:
         """
         Trigger fraud analysis for claim

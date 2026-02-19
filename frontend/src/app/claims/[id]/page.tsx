@@ -151,14 +151,14 @@ export default function ClaimDetailPage() {
                 </div>
             </div>
 
-            {/* Fraud Assessment */}
-            <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold flex items-center gap-2">
-                        <Shield size={20} className="text-indigo-500" />
-                        Fraud Assessment
-                    </h2>
-                    {isAdmin && (
+            {/* Fraud Assessment - Only visible to admin */}
+            {isAdmin && (
+                <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-semibold flex items-center gap-2">
+                            <Shield size={20} className="text-indigo-500" />
+                            Fraud Assessment
+                        </h2>
                         <button
                             onClick={handleTriggerAnalysis}
                             disabled={actionLoading === "analyze"}
@@ -171,33 +171,33 @@ export default function ClaimDetailPage() {
                             )}
                             Run Analysis
                         </button>
+                    </div>
+
+                    {fraud ? (
+                        <div className="grid sm:grid-cols-[120px_1fr] gap-6">
+                            <div className="flex justify-center">
+                                <FraudScoreGauge score={fraud.fraud_score} />
+                            </div>
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-sm font-medium mb-2">Explanation</h3>
+                                    <p className="text-sm text-[var(--color-muted-foreground)] leading-relaxed">
+                                        {fraud.explanation_text}
+                                    </p>
+                                </div>
+                                <FraudSignalsList
+                                    deterministic={fraud.deterministic_signals}
+                                    statistical={fraud.statistical_signals}
+                                />
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-[var(--color-muted-foreground)]">
+                            No fraud assessment available. Click &apos;Run Analysis&apos; to trigger.
+                        </p>
                     )}
                 </div>
-
-                {fraud ? (
-                    <div className="grid sm:grid-cols-[120px_1fr] gap-6">
-                        <div className="flex justify-center">
-                            <FraudScoreGauge score={fraud.fraud_score} />
-                        </div>
-                        <div className="space-y-4">
-                            <div>
-                                <h3 className="text-sm font-medium mb-2">Explanation</h3>
-                                <p className="text-sm text-[var(--color-muted-foreground)] leading-relaxed">
-                                    {fraud.explanation_text}
-                                </p>
-                            </div>
-                            <FraudSignalsList
-                                deterministic={fraud.deterministic_signals}
-                                statistical={fraud.statistical_signals}
-                            />
-                        </div>
-                    </div>
-                ) : (
-                    <p className="text-sm text-[var(--color-muted-foreground)]">
-                        No fraud assessment available. {isAdmin && "Click 'Run Analysis' to trigger."}
-                    </p>
-                )}
-            </div>
+            )}
 
             {/* Documents */}
             <div className="bg-[var(--color-card)] border border-[var(--color-border)] rounded-xl p-6">
