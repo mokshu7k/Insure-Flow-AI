@@ -17,6 +17,11 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.models.consent import UserConsent
+from app.models.claim import Claim  # noqa: F401 - needed for SQLAlchemy relationship
+from app.models.document import Document  # noqa: F401 - needed for SQLAlchemy relationship
+from app.models.fraud import FraudAssessment  # noqa: F401 - needed for SQLAlchemy relationship
+from app.models.settlement import Settlement  # noqa: F401 - needed for SQLAlchemy relationship
+from app.models.qr import QRAuthorization  # noqa: F401 - needed for SQLAlchemy relationship
 from app.core.security import hash_password
 from app.config import settings
 

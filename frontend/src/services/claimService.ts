@@ -22,6 +22,11 @@ export const claimService = {
         return res.data;
     },
 
+    async updateAmount(id: string, amount: number): Promise<Claim> {
+        const res = await api.put<Claim>(`/claims/${id}/amount`, null, { params: { amount } });
+        return res.data;
+    },
+
     async triggerFraudAnalysis(id: string): Promise<Claim> {
         const res = await api.post<Claim>(`/claims/${id}/analyze`);
         return res.data;

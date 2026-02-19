@@ -30,14 +30,16 @@ export type UserRole = "CUSTOMER" | "PROVIDER" | "INSURER_ADMIN" | "AUDITOR";
 export interface ClaimCreate {
     policy_number: string;
     claim_type: ClaimType;
-    claim_amount: number;
+    claim_amount?: number;  // Optional during creation, set via update endpoint
 }
 
 export type ClaimType = "HEALTH" | "MOTOR" | "REIMBURSEMENT";
 
 export type ClaimStatus =
     | "SUBMITTED"
+    | "OCR_PROCESSED"
     | "UNDER_REVIEW"
+    | "FRAUD_ANALYZED"
     | "APPROVED"
     | "REJECTED"
     | "MANUAL_REVIEW_REQUIRED"

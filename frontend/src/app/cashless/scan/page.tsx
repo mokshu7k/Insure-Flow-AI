@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { qrService } from "@/services/qrService";
 import type { QRValidationResponse } from "@/types";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, extractErrorMessage } from "@/lib/utils";
 import {
     Camera,
     CheckCircle2,
@@ -67,10 +67,7 @@ export default function ScanQRPage() {
             const res = await qrService.validate({ qr_token: token });
             setResult(res);
         } catch (err: unknown) {
-            const msg =
-                (err as { response?: { data?: { detail?: string } } })?.response?.data
-                    ?.detail || "Validation failed";
-            setResult({ valid: false, message: msg });
+            setResult({ valid: false, message: extractErrorMessage(err, "Validation failed") });
         } finally {
             setValidating(false);
         }

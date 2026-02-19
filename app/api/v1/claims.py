@@ -105,6 +105,28 @@ def update_claim_status(
     return ClaimResponse.from_orm(claim)
 
 
+@router.put("/{claim_id}/amount", response_model=ClaimResponse)
+def update_claim_amount(
+    claim_id: str,
+    amount: float = Query(..., gt=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update claim amount (for draft claims)
+    
+    Only claim owner can update before final submission
+    """
+    claim_service = ClaimService(db)
+    claim = claim_service.update_claim_amount(
+        uuid.UUID(claim_id),
+        amount,
+        current_user
+    )
+    
+    return ClaimResponse.from_orm(claim)
+
+
 @router.post("/{claim_id}/analyze", response_model=ClaimResponse)
 def trigger_fraud_analysis(
     claim_id: str,

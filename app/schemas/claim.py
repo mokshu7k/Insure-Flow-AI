@@ -10,7 +10,7 @@ class ClaimCreate(BaseModel):
     """Claim creation request"""
     policy_number: str = Field(..., min_length=5, max_length=100)
     claim_type: str = Field(..., pattern="^(HEALTH|MOTOR|REIMBURSEMENT)$")
-    claim_amount: float = Field(..., gt=0)
+    claim_amount: float = Field(default=0, ge=0)  # Optional during creation, set via update endpoint
 
 
 class ClaimResponse(BaseModel):

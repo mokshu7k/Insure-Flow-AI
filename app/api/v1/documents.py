@@ -123,14 +123,12 @@ def download_document(
 @router.get("/{document_id}/ocr")
 def get_ocr_result(
     document_id: str,
-    current_user: User = Depends(
-        require_any_role([Role.INSURER_ADMIN, Role.AUDITOR])
-    ),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Return OCR extraction JSON for a document.
-    Requires INSURER_ADMIN or AUDITOR.
+    Accessible by document owner or admins.
     """
     svc = DocumentService(db)
     try:
