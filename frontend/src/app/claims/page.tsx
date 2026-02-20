@@ -9,7 +9,7 @@ import { claimService } from "@/services/claimService";
 import { Plus, Filter, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import type { ClaimStatus, ClaimType } from "@/types";
 
-const STATUSES: ClaimStatus[] = ["SUBMITTED", "UNDER_REVIEW", "FRAUD_ANALYZED", "APPROVED", "REJECTED", "MANUAL_REVIEW_REQUIRED", "SETTLED"];
+const STATUSES: ClaimStatus[] = ["SUBMITTED", "UNDER_REVIEW", "FRAUD_ANALYZED", "APPROVED", "PRE_AUTHORIZED", "REJECTED", "MANUAL_REVIEW_REQUIRED", "SETTLED"];
 
 function formatCurrency(amount: number | null) {
     if (!amount) return "—";

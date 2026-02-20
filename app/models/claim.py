@@ -16,6 +16,7 @@ class Claim(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    provider_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     policy_number: Mapped[str] = mapped_column(String(128), nullable=False)
     claim_type: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -34,6 +35,7 @@ class Claim(Base):
 
     __table_args__ = (
         Index("ix_claims_user_id", "user_id"),
+        Index("ix_claims_provider_id", "provider_id"),
         Index("ix_claims_status", "status"),
         Index("ix_claims_created_at", "created_at"),
     )

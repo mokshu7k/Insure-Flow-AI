@@ -56,6 +56,11 @@ USERS = [
         "password": "Admin@123",
         "role": "CLAIM_ADJUSTER",
     },
+    {
+        "email": "hospital@provider.ai",
+        "password": "Provider@123",
+        "role": "PROVIDER",
+    },
 ]
 
 # Claims for customer1 — covers all statuses & claim types
@@ -73,6 +78,14 @@ CLAIMS_TEMPLATE = [
     ("POL-HEALTH-TEST-001", "HEALTH",           1.0,       "SUBMITTED",              None,    0),
     ("POL-MOTOR-TEST-001",  "MOTOR",             1.0,       "SUBMITTED",              None,    0),
     ("POL-REIMB-TEST-001",  "REIMBURSEMENT",    1.0,       "SUBMITTED",              None,    0),
+]
+
+# Cashless claims for customer1 assigned to hospital@provider.ai
+CASHLESS_CLAIMS_TEMPLATE = [
+    # (policy_number, claim_amount, status, daysAgo)
+    ("POL-CASHLESS-2026-001", 150_000.0, "SUBMITTED", 3),
+    ("POL-CASHLESS-2026-002",  95_000.0, "SUBMITTED", 1),
+    ("POL-CASHLESS-TEST-001",  50_000.0, "SUBMITTED", 0),
 ]
 
 
@@ -134,6 +147,41 @@ async def _get_or_create_claim(
     return claim, True
 
 
+async def _get_or_create_cashless_claim(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    provider_id: uuid.UUID,
+    policy_number: str,
+    claim_amount: float,
+    status: str,
+    days_ago: int,
+) -> tuple[Claim, bool]:
+    result = await db.execute(
+        select(Claim).where(Claim.policy_number == policy_number, Claim.user_id == user_id)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        return existing, False
+    ts = _utcnow() - timedelta(days=days_ago)
+    claim = Claim(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        provider_id=provider_id,
+        policy_number=policy_number,
+        claim_type="CASHLESS",
+        claim_amount=claim_amount,
+        description=f"Cashless claim for policy {policy_number}",
+        status=status,
+    )
+    db.add(claim)
+    await db.flush()
+    from sqlalchemy import update as sa_update
+    await db.execute(
+        sa_update(Claim).where(Claim.id == claim.id).values(created_at=ts)
+    )
+    return claim, True
+
+
 # ────────────────────────────────────────────────────────────────────────────
 #  MAIN
 # ────────────────────────────────────────────────────────────────────────────
@@ -171,6 +219,20 @@ async def seed() -> None:
                 print(f"  ~ skip  {pol:<28} (exists)")
         await db.flush()
 
+        # 2b. Cashless claims for customer1 assigned to hospital
+        hospital = created_users["hospital@provider.ai"]
+        for (pol, amt, status, days) in CASHLESS_CLAIMS_TEMPLATE:
+            claim, created = await _get_or_create_cashless_claim(
+                db, customer.id, hospital.id, pol, amt, status, days
+            )
+            created_claims.append(claim)
+            if created:
+                claims_created += 1
+                print(f"  + claim {pol:<28} {status}  (CASHLESS → provider)")
+            else:
+                print(f"  ~ skip  {pol:<28} (exists)")
+        await db.flush()
+
         # 3. Settlement for the SETTLED claim
         settled_claim = next((c for c in created_claims if c.status == "SETTLED"), None)
         settlement_created = 0
@@ -202,6 +264,7 @@ async def seed() -> None:
         print("  customer1@test.ai       / Test1234!  (CUSTOMER)")
         print("  customer2@test.ai       / Test1234!  (CUSTOMER)")
         print("  adjuster@insureflow.ai  / Admin@123  (CLAIM_ADJUSTER)")
+        print("  hospital@provider.ai    / Provider@123 (PROVIDER)")
         print("\n── Policy numbers to test the wizard ───────────")
         print("  POL-HEALTH-2026-001  (HEALTH)        — already APPROVED")
         print("  POL-MOTOR-2026-001   (MOTOR)         — already SETTLED")
@@ -209,6 +272,10 @@ async def seed() -> None:
         print("  POL-HEALTH-TEST-001  (HEALTH)        — fresh SUBMITTED (use for wizard)")
         print("  POL-MOTOR-TEST-001   (MOTOR)         — fresh SUBMITTED (use for wizard)")
         print("  POL-REIMB-TEST-001   (REIMBURSEMENT) — fresh SUBMITTED (use for wizard)")
+        print("\n── Cashless claim policies ─────────────────────")
+        print("  POL-CASHLESS-2026-001  ₹1,50,000  — SUBMITTED (provider: hospital@provider.ai)")
+        print("  POL-CASHLESS-2026-002  ₹95,000    — SUBMITTED (provider: hospital@provider.ai)")
+        print("  POL-CASHLESS-TEST-001  ₹50,000    — SUBMITTED (provider: hospital@provider.ai)")
         print("────────────────────────────────────────────────\n")
 
 

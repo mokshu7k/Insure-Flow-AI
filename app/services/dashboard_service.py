@@ -16,6 +16,7 @@ from app.schemas.dashboard import (
     ComplianceSummary,
     CustomerMetrics,
     CustomerRecentClaim,
+    ProviderMetrics,
 )
 
 
@@ -277,5 +278,94 @@ async def get_customer_metrics(db: AsyncSession, user_id: _uuid.UUID) -> Custome
         type_breakdown=type_breakdown,
         recent_claims=recent,
         needs_action=needs_action,
+        generated_at=datetime.utcnow().isoformat(),
+    )
+
+
+async def get_provider_metrics(provider_id: str, db: AsyncSession) -> ProviderMetrics:
+    """Provider dashboard — shows claims filed for this provider."""
+    import uuid
+    provider_uuid = uuid.UUID(provider_id)
+    
+    # Get all claims for this provider
+    result = await db.execute(
+        select(Claim).where(Claim.provider_id == provider_uuid).order_by(Claim.created_at.desc())
+    )
+    claims = result.scalars().all()
+
+    n = len(claims)
+    if n == 0:
+        return ProviderMetrics(generated_at=datetime.utcnow().isoformat())
+
+    # Status breakdown
+    status_breakdown = {}
+    pending = 0
+    approved = 0
+    settled = 0
+    rejected = 0
+    manual_review = 0
+    total_claimed = 0.0
+    total_approved = 0.0
+    total_settled = 0.0
+    type_breakdown = {}
+
+    for c in claims:
+        total_claimed += float(c.claim_amount) if c.claim_amount is not None else 0.0
+        status_breakdown[c.status] = status_breakdown.get(c.status, 0) + 1
+        type_breakdown[c.claim_type] = type_breakdown.get(c.claim_type, 0) + 1
+
+        if c.status in ("SUBMITTED", "UNDER_REVIEW"):
+            pending += 1
+        elif c.status == "APPROVED":
+            approved += 1
+            total_approved += float(c.claim_amount) if c.claim_amount is not None else 0.0
+        elif c.status == "SETTLED":
+            settled += 1
+            total_settled += float(c.claim_amount) if c.claim_amount is not None else 0.0
+        elif c.status == "REJECTED":
+            rejected += 1
+        elif c.status == "MANUAL_REVIEW_REQUIRED":
+            manual_review += 1
+
+    avg_amount = total_claimed / n if n > 0 else 0.0
+
+    # Recent 5 claims
+    recent = [
+        CustomerRecentClaim(
+            id=str(c.id),
+            policy_number=c.policy_number,
+            claim_type=c.claim_type,
+            claim_amount=float(c.claim_amount) if c.claim_amount is not None else None,
+            status=c.status,
+            created_at=c.created_at.isoformat() if hasattr(c.created_at, "isoformat") else str(c.created_at),
+            updated_at=c.updated_at.isoformat() if hasattr(c.updated_at, "isoformat") else str(c.updated_at),
+        )
+        for c in claims[:5]
+    ]
+
+    # Count high fraud risk claims
+    fraud_result = await db.execute(
+        select(func.count(FraudAssessment.id)).where(
+            FraudAssessment.claim_id.in_([c.id for c in claims]),
+            FraudAssessment.risk_level.in_(("HIGH", "VERY_HIGH", "CRITICAL")),
+        )
+    )
+    high_fraud_risk_count = fraud_result.scalar() or 0
+
+    return ProviderMetrics(
+        total_claims=n,
+        pending_claims=pending,
+        approved_claims=approved,
+        settled_claims=settled,
+        rejected_claims=rejected,
+        manual_review_claims=manual_review,
+        total_claimed_amount=round(total_claimed, 2),
+        total_approved_amount=round(total_approved, 2),
+        total_settled_amount=round(total_settled, 2),
+        average_claim_amount=round(avg_amount, 2),
+        status_breakdown=status_breakdown,
+        type_breakdown=type_breakdown,
+        recent_claims=recent,
+        high_fraud_risk_count=int(high_fraud_risk_count),
         generated_at=datetime.utcnow().isoformat(),
     )

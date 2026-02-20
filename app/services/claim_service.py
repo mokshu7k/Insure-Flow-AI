@@ -14,10 +14,19 @@ from app.schemas.claim import ClaimCreate, ClaimListResponse, ClaimResponse, Cla
 from app.services.audit_service import log_action
 
 
-async def create_claim(payload: ClaimCreate, user_id: str, db: AsyncSession) -> Claim:
+async def create_claim(payload: ClaimCreate, user_id: str, role: str, db: AsyncSession) -> Claim:
+    # PROVIDER users cannot file claims
+    if role == "PROVIDER":
+        raise PermissionDeniedError("Providers cannot file claims. Use the provider dashboard to view claims.")
+    
+    provider_id = None
+    if payload.provider_id:
+        provider_id = uuid.UUID(payload.provider_id)
+    
     claim = Claim(
         id=uuid.uuid4(),
         user_id=uuid.UUID(user_id),
+        provider_id=provider_id,
         policy_number=payload.policy_number,
         claim_type=payload.claim_type,
         claim_amount=payload.claim_amount,
@@ -31,7 +40,7 @@ async def create_claim(payload: ClaimCreate, user_id: str, db: AsyncSession) -> 
         entity_type="CLAIM",
         actor_id=user_id,
         entity_id=str(claim.id),
-        metadata={"amount": payload.claim_amount, "type": payload.claim_type},
+        metadata={"amount": payload.claim_amount, "type": payload.claim_type, "provider_id": str(provider_id) if provider_id else None},
     )
     await db.commit()
     await db.refresh(claim)
@@ -44,6 +53,8 @@ async def get_claim(claim_id: str, user_id: str, role: str, db: AsyncSession) ->
     if not claim:
         raise NotFoundError("Claim not found")
     if role == "CUSTOMER" and str(claim.user_id) != user_id:
+        raise PermissionDeniedError("Not your claim")
+    if role == "PROVIDER" and str(claim.provider_id) != user_id:
         raise PermissionDeniedError("Not your claim")
     return claim
 
@@ -59,6 +70,9 @@ async def list_claims(
     query = select(Claim)
     if role == "CUSTOMER":
         query = query.where(Claim.user_id == uuid.UUID(user_id))
+    elif role == "PROVIDER":
+        # PROVIDER sees only claims associated with them
+        query = query.where(Claim.provider_id == uuid.UUID(user_id))
     if status_filter:
         query = query.where(Claim.status == status_filter)
 

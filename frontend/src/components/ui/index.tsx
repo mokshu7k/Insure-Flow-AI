@@ -17,8 +17,9 @@ export function RiskBadge({ score }: RiskBadgeProps) {
 const STATUS_CLASS: Record<string, string> = {
     SUBMITTED: "pill-submitted", OCR_PROCESSED: "pill-submitted",
     UNDER_REVIEW: "pill-review", MANUAL_REVIEW_REQUIRED: "pill-review", FRAUD_ANALYZED: "pill-review",
-    APPROVED: "pill-approved", SETTLED: "pill-settled",
+    APPROVED: "pill-approved", PRE_AUTHORIZED: "pill-approved", SETTLED: "pill-settled",
     REJECTED: "pill-rejected",
+    PENDING_REVIEW: "pill-review", ACCEPTED_BY_PATIENT: "pill-review",
 };
 
 interface StatusPillProps { status: string }

@@ -43,6 +43,9 @@ joblib
 # Observability
 prometheus-client
 
+# QR Code generation
+qrcode[pil]
+
 # Testing
 pytest
 pytest-asyncio

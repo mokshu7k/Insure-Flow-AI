@@ -20,15 +20,17 @@ class ClaimStatus:
     UNDER_REVIEW = "UNDER_REVIEW"
     MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
     APPROVED = "APPROVED"
+    PRE_AUTHORIZED = "PRE_AUTHORIZED"
     REJECTED = "REJECTED"
     SETTLED = "SETTLED"
 
     # Valid forward transitions  {current: set of allowed next states}
     TRANSITIONS: dict[str, set[str]] = {
-        SUBMITTED:               {UNDER_REVIEW},
+        SUBMITTED:               {UNDER_REVIEW, PRE_AUTHORIZED},
         UNDER_REVIEW:            {APPROVED, REJECTED, MANUAL_REVIEW_REQUIRED},
         MANUAL_REVIEW_REQUIRED:  {APPROVED, REJECTED},
         APPROVED:                {SETTLED},
+        PRE_AUTHORIZED:          {SETTLED, REJECTED},
         REJECTED:                set(),   # terminal
         SETTLED:                 set(),   # terminal
     }
@@ -63,6 +65,15 @@ class SettlementStatus:
     FAILED = "FAILED"
 
 
+class CashlessStatus:
+    """Status of a cashless QR authorization token."""
+    PENDING_REVIEW = "PENDING_REVIEW"          # QR generated, awaiting patient scan
+    ACCEPTED_BY_PATIENT = "ACCEPTED_BY_PATIENT"  # Patient scanned & accepted
+    PRE_AUTHORIZED = "PRE_AUTHORIZED"          # Insurer approved payment
+    REJECTED = "REJECTED"                      # Insurer rejected
+    EXPIRED = "EXPIRED"                        # Token expired before use
+
+
 class RiskLevel:
     MINIMAL = "MINIMAL"
     LOW = "LOW"
@@ -93,9 +104,13 @@ class AuditAction:
     SETTLEMENT_INITIATED = "SETTLEMENT_INITIATED"
     SETTLEMENT_STATUS_CHANGED = "SETTLEMENT_STATUS_CHANGED"
 
-    # QR
+    # QR / Cashless
     QR_GENERATED = "QR_GENERATED"
     QR_VERIFIED = "QR_VERIFIED"
+    CASHLESS_QR_GENERATED = "CASHLESS_QR_GENERATED"
+    CASHLESS_ACCEPTED = "CASHLESS_ACCEPTED"
+    CASHLESS_PRE_AUTHORIZED = "CASHLESS_PRE_AUTHORIZED"
+    CASHLESS_REJECTED = "CASHLESS_REJECTED"
 
     # Compliance
     CONSENT_GIVEN = "CONSENT_GIVEN"

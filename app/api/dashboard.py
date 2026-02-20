@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.schemas.dashboard import DashboardOverview, FraudDistribution, SLAMetrics, ComplianceSummary, CustomerMetrics
+from app.schemas.dashboard import DashboardOverview, FraudDistribution, SLAMetrics, ComplianceSummary, CustomerMetrics, ProviderMetrics
 from app.services import dashboard_service
 from app.core.rbac import require_any_role
 
@@ -61,3 +61,13 @@ async def customer_metrics(
 ):
     """Personal metrics for the authenticated customer. Any role can call this — data is always scoped to their own claims."""
     return await dashboard_service.get_customer_metrics(db, current_user.id)
+
+
+@router.get("/provider", response_model=ProviderMetrics)
+async def provider_metrics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Provider dashboard — shows claims filed for this provider. PROVIDER role only."""
+    require_any_role(["PROVIDER"])(current_user)
+    return await dashboard_service.get_provider_metrics(str(current_user.id), db)

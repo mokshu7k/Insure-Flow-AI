@@ -90,3 +90,32 @@ class CustomerMetrics(BaseModel):
     needs_action: list[str] = Field(default_factory=list)   # claim IDs in MANUAL_REVIEW_REQUIRED
 
     generated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+class ProviderMetrics(BaseModel):
+    """Provider-facing dashboard — shows claims filed for this provider."""
+    # Volume
+    total_claims: int = 0
+    pending_claims: int = 0         # in pipeline: SUBMITTED → UNDER_REVIEW
+    approved_claims: int = 0        # APPROVED
+    settled_claims: int = 0         # SETTLED
+    rejected_claims: int = 0        # REJECTED
+    manual_review_claims: int = 0   # MANUAL_REVIEW_REQUIRED
+
+    # Amounts
+    total_claimed_amount: float = 0.0   # sum of claim_amount for all claims
+    total_approved_amount: float = 0.0  # sum of claim_amount for APPROVED claims
+    total_settled_amount: float = 0.0   # sum of claim_amount for SETTLED claims
+    average_claim_amount: float = 0.0
+
+    # Breakdowns
+    status_breakdown: Dict[str, int] = Field(default_factory=dict)
+    type_breakdown: Dict[str, int] = Field(default_factory=dict)  # HEALTH / MOTOR / REIMBURSEMENT
+
+    # Recent activity
+    recent_claims: list[CustomerRecentClaim] = Field(default_factory=list)  # newest 5
+
+    # High-risk alerts
+    high_fraud_risk_count: int = 0
+
+    generated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

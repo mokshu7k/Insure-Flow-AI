@@ -19,7 +19,7 @@ async def create_claim(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    claim = await claim_service.create_claim(payload, str(current_user.id), db)
+    claim = await claim_service.create_claim(payload, str(current_user.id), current_user.role, db)
     return claim
 
 

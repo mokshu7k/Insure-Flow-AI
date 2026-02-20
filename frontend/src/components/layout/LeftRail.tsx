@@ -4,12 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore, useIsAdmin, useIsAdjuster } from "@/store/authStore";
 import {
-    LayoutDashboard, FileText, AlertTriangle, Scale, Shield, User, LogOut, ChevronRight, MessageSquare
+    LayoutDashboard, FileText, AlertTriangle, Scale, Shield, User, LogOut, ChevronRight, MessageSquare, QrCode
 } from "lucide-react";
 
 const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, alwaysShow: true },
     { href: "/claims", label: "Claims", icon: FileText, alwaysShow: true },
+    { href: "/cashless", label: "Cashless", icon: QrCode, alwaysShow: true },
     { href: "/chat", label: "Assistant", icon: MessageSquare, alwaysShow: true },
     { href: "/adjuster", label: "Adjuster", icon: Scale, adminOnly: true },
     { href: "/compliance", label: "Compliance", icon: Shield, complianceRole: true },

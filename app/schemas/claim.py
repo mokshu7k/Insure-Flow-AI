@@ -13,6 +13,7 @@ class ClaimCreate(BaseModel):
     claim_type: str
     claim_amount: float
     description: Optional[str] = None
+    provider_id: Optional[str] = None  # Optional: hospital/garage ID if applicable
 
     @field_validator("claim_type")
     @classmethod

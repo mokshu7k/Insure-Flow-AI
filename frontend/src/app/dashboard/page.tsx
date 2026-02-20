@@ -19,7 +19,7 @@ import {
 const STATUS_COLORS: Record<string, string> = {
     SUBMITTED: "#5a6070", OCR_PROCESSED: "#5a6070",
     UNDER_REVIEW: "#d97706", MANUAL_REVIEW_REQUIRED: "#d97706", FRAUD_ANALYZED: "#d97706",
-    APPROVED: "#16a34a", SETTLED: "#3b82f6",
+    APPROVED: "#16a34a", PRE_AUTHORIZED: "#10b981", SETTLED: "#3b82f6",
     REJECTED: "#c0392b",
 };
 
@@ -27,6 +27,7 @@ const TYPE_COLORS: Record<string, string> = {
     HEALTH: "#3b82f6",
     MOTOR: "#f59e0b",
     REIMBURSEMENT: "#8b5cf6",
+    CASHLESS: "#10b981",
 };
 
 function fmt(n: number) {
