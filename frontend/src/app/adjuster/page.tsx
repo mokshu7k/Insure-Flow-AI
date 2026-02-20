@@ -147,7 +147,7 @@ export default function AdjusterPage() {
                                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                                     <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Adjuster Report</span>
                                     <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>
-                                        {new Date(report.generated_at).toLocaleString()}
+                                        {new Date(report.generated_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })}
                                     </span>
                                 </div>
                                 <pre style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", lineHeight: 1.7, whiteSpace: "pre-wrap", color: "var(--text-secondary)" }}>

@@ -37,14 +37,23 @@ api.interceptors.response.use(
         console.debug("[api] ←", res.status, res.config.url, res.data);
         return res;
     },
-    async (error) => {        // Ignore cancelled/aborted requests (happens during navigation)
+    async (error) => {
+        // Ignore cancelled/aborted requests (happens during navigation)
         if (axios.isCancel(error) || error.code === "ERR_CANCELED" || error.code === "ERR_NETWORK") {
             return Promise.reject(error);
-        }        console.error("[api] ✗", error.response?.status, error.config?.url, error.response?.data ?? error.message);
+        }
+
         const original = error.config;
+        const status = error.response?.status;
+
         // Never try to refresh on auth endpoints — just let the error propagate
-        const isAuthEndpoint = original?.url?.includes("/auth/login") || original?.url?.includes("/auth/register") || original?.url?.includes("/auth/refresh");
-        if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
+        const isAuthEndpoint =
+            original?.url?.includes("/auth/login") ||
+            original?.url?.includes("/auth/register") ||
+            original?.url?.includes("/auth/refresh");
+
+        // Attempt token refresh on 401 (once only, not on auth endpoints themselves)
+        if (status === 401 && !original._retry && !isAuthEndpoint) {
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -64,17 +73,22 @@ api.interceptors.response.use(
                 api.defaults.headers.common.Authorization = `Bearer ${data.access_token}`;
                 processQueue(null, data.access_token);
                 original.headers.Authorization = `Bearer ${data.access_token}`;
+                // Retry original request silently — do NOT log the original 401
                 return api(original);
             } catch (err) {
                 processQueue(err, null);
                 localStorage.removeItem("access_token");
                 localStorage.removeItem("refresh_token");
+                console.error("[api] ✗ session expired, redirecting to login");
                 if (typeof window !== "undefined") window.location.href = "/login";
                 return Promise.reject(err);
             } finally {
                 isRefreshing = false;
             }
         }
+
+        // Log only errors that are NOT handled by the refresh flow above
+        console.error("[api] ✗", status, original?.url, error.response?.data ?? error.message);
         return Promise.reject(error);
     }
 );

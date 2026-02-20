@@ -8,7 +8,7 @@ interface AuthGuardProps { children: React.ReactNode; requireAdmin?: boolean; }
 const ADMIN_ROLES = ["INSURER_ADMIN", "AUDITOR", "CLAIM_ADJUSTER"];
 
 export function AuthGuard({ children, requireAdmin }: AuthGuardProps) {
-    const { user, accessToken, loadUser } = useAuthStore();
+    const { user, accessToken, loadUser, _hasHydrated } = useAuthStore();
     const router = useRouter();
 
     // Check if user has admin role
@@ -17,18 +17,23 @@ export function AuthGuard({ children, requireAdmin }: AuthGuardProps) {
     }, [user]);
 
     useEffect(() => {
+        // Wait until the persisted store has been rehydrated from localStorage
+        // before evaluating auth state — otherwise we redirect on the initial
+        // null values that exist before rehydration completes.
+        if (!_hasHydrated) return;
         if (!accessToken) { router.replace("/login"); return; }
         if (!user) { loadUser(); }
-    }, [accessToken, user, loadUser, router]);
+    }, [_hasHydrated, accessToken, user, loadUser, router]);
 
     useEffect(() => {
+        if (!_hasHydrated) return;
         if (user && requireAdmin && !hasAdminRole) {
             router.replace("/claims");
         }
-    }, [user, requireAdmin, hasAdminRole, router]);
+    }, [_hasHydrated, user, requireAdmin, hasAdminRole, router]);
 
-    // Show loading while user is not loaded
-    if (!user) return (
+    // Show loading while hydration or user fetch is in progress
+    if (!_hasHydrated || !user) return (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--bg-base)" }}>
             <div className="skeleton" style={{ width: 200, height: 20 }} />
         </div>

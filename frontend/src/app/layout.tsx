@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { StoreHydrator } from "@/components/StoreHydrator";
 
 export const metadata: Metadata = {
   title: "InsureFlow — Claim Intelligence Platform",
@@ -8,12 +9,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
-      <body>{children}</body>
+      <body suppressHydrationWarning>
+        <StoreHydrator />
+        {children}
+      </body>
     </html>
   );
 }

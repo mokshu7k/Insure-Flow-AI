@@ -95,7 +95,7 @@ function CustomerDashboardContent() {
                 <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>My Dashboard</span>
                 {metrics && (
                     <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--text-muted)" }}>
-                        updated {new Date(metrics.generated_at).toLocaleTimeString()}
+                        updated {new Date(metrics.generated_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })}
                     </span>
                 )}
             </div>
@@ -378,7 +378,7 @@ function AdminDashboardContent() {
                 <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Operations Dashboard</span>
                 {overview && (
                     <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--text-muted)" }}>
-                        refreshed {new Date(overview.generated_at).toLocaleTimeString()}
+                        refreshed {new Date(overview.generated_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false })}
                     </span>
                 )}
             </div>

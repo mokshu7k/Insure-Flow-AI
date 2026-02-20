@@ -3,7 +3,6 @@ Async SQLAlchemy engine and session factory.
 """
 from __future__ import annotations
 
-import ssl
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -14,20 +13,15 @@ from sqlalchemy.ext.asyncio import (
 
 from app.config import settings
 
-# ── SSL context for Neon/asyncpg ────────────────────────────────────────────
-# asyncpg doesn't accept sslmode=require in URL; use ssl=True or SSLContext
-ssl_context = ssl.create_default_context()
-ssl_context.check_hostname = False
-ssl_context.verify_mode = ssl.CERT_NONE  # Neon pooler uses self-signed certs
-
 # ── Engine ────────────────────────────────────────────────────────────────────
+# GCP Cloud SQL (asyncpg) — SSL is handled by the driver using the system
+# CA bundle. No custom SSL context needed; sslmode=require in the URL is enough.
 engine = create_async_engine(
     settings.DATABASE_URL,
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
     echo=settings.DEBUG,
-    connect_args={"ssl": ssl_context},  # Enable SSL for asyncpg
 )
 
 # ── Session factory ───────────────────────────────────────────────────────────

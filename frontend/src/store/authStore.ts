@@ -15,9 +15,12 @@ interface AuthState {
     user: User | null;
     accessToken: string | null;
     isLoading: boolean;
+    /** True once the persisted state has been rehydrated from localStorage. */
+    _hasHydrated: boolean;
     login: (email: string, password: string) => Promise<void>;
     logout: () => void;
     loadUser: () => Promise<void>;
+    _setHasHydrated: (v: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -26,6 +29,8 @@ export const useAuthStore = create<AuthState>()(
             user: null,
             accessToken: null,
             isLoading: false,
+            _hasHydrated: false,
+            _setHasHydrated: (v) => set({ _hasHydrated: v }),
 
             login: async (email, password) => {
                 set({ isLoading: true });
@@ -59,7 +64,16 @@ export const useAuthStore = create<AuthState>()(
         }),
         {
             name: "auth-store",
+            // Only persist auth data — never persist the hydration flag itself.
             partialize: (s) => ({ accessToken: s.accessToken, user: s.user }),
+            // Prevent synchronous localStorage read during SSR hydration.
+            // Rehydration is triggered explicitly in StoreHydrator after mount.
+            skipHydration: true,
+            // Called after rehydration completes — flip the flag so AuthGuard
+            // knows it is safe to evaluate auth state and potentially redirect.
+            onRehydrateStorage: () => (state) => {
+                state?._setHasHydrated(true);
+            },
         }
     )
 );
