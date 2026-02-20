@@ -1,0 +1,47 @@
+# Web Framework
+fastapi
+uvicorn[standard]
+python-multipart
+httpx
+
+# Database
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# Config & Validation
+pydantic
+pydantic-settings
+email-validator
+
+# Auth & Security
+python-jose[cryptography]
+passlib[bcrypt]
+cryptography
+
+# AI / Agent (Gemini + LangGraph — no langchain-community, no torch)
+langgraph
+langchain-core
+langchain-google-genai
+
+# Document Extraction — LangExtract (Gemini-powered, no OCR, no torch)
+langextract
+
+# GCP Voice (speech-to-text / text-to-speech)
+# NOTE: grpcio (pulled by these) is the slow compile step on Windows.
+# Skip these two if you don't need voice features yet:
+google-cloud-speech
+google-cloud-texttospeech
+
+# Fraud ML (scikit-learn only — no torch, no tensorflow)
+scikit-learn
+numpy
+joblib
+
+# Observability
+prometheus-client
+
+# Testing
+pytest
+pytest-asyncio
+pytest-cov

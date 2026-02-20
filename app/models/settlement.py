@@ -1,0 +1,29 @@
+"""Settlement ORM model."""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
+
+
+class Settlement(Base):
+    __tablename__ = "settlements"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    claim_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("claims.id"), unique=True, nullable=False)
+    initiated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+
+    amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="PROCESSING", nullable=False)
+    settlement_reference: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    external_reference: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_settlements_claim_id", "claim_id"),)

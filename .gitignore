@@ -1,0 +1,71 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+*.so
+
+# ── Environment / secrets (NEVER commit these) ────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+service-account*.json
+gcp-credentials*.json
+credentials*.json
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Storage (uploaded + encrypted patient/claim files) ────────────────────────
+storage/
+encrypted/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── ML model artifacts ────────────────────────────────────────────────────────
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pt
+*.onnx
+
+# ── Alembic auto-generated (keep migrations/versions/*.py) ───────────────────
+# nothing to exclude — versions are tracked
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Frontend (Next.js) ────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.vercel
+frontend/*.tsbuildinfo
+
+# ── Test artefacts ────────────────────────────────────────────────────────────
+.coverage
+htmlcov/
+.tox/
+coverage.xml
