@@ -22,10 +22,14 @@ from app.models.claim import Claim
 from app.models.document import Document
 from app.models.document_access_log import DocumentAccessLog
 from app.services.audit_service import log_action
+from app.services.document_gatekeeper import DocumentGatekeeper, DocumentDecisionStatus
+from app.services.gov_adapters.aadhaar_verification import AadhaarQRVerifier
+from app.services.gov_adapters.pan_verification import PANRuleVerifier
 
 logger = logging.getLogger(__name__)
 
 _fernet: Fernet | None = None
+_gatekeeper: DocumentGatekeeper | None = None
 
 
 def _get_fernet() -> Fernet:
@@ -33,6 +37,18 @@ def _get_fernet() -> Fernet:
     if _fernet is None:
         _fernet = Fernet(settings.ENCRYPTION_KEY.encode())
     return _fernet
+
+
+def _get_gatekeeper() -> DocumentGatekeeper:
+    """Get or create singleton DocumentGatekeeper instance."""
+    global _gatekeeper
+    if _gatekeeper is None:
+        _gatekeeper = DocumentGatekeeper(
+            aadhaar_verifier=AadhaarQRVerifier(),
+            pan_verifier=PANRuleVerifier(),
+            gemini_api_key=settings.GCP_API_KEY
+        )
+    return _gatekeeper
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────
@@ -56,15 +72,30 @@ async def upload_document(
     if len(content) > settings.MAX_UPLOAD_SIZE:
         raise BusinessRuleError(f"File too large (max {settings.MAX_UPLOAD_SIZE // 1024 // 1024} MB)")
 
+    # Extract structured data FIRST (needed for validation)
+    extraction = await _extract(content, file.content_type or "", document_type)
+    extracted_text = extraction.get("raw_text", "") or str(extraction.get("fields", {}))
+    
+    # Validate document using DocumentGatekeeper
+    gatekeeper = _get_gatekeeper()
+    validation_decision = await gatekeeper.validate_document(
+        file_bytes=content,
+        filename=file.filename or "unknown",
+        expected_type=document_type,
+        extracted_text=extracted_text,
+        holder_name=None  # Could extract from claim/user data if available
+    )
+    
+    # Hard reject if validation failed
+    if validation_decision.status == DocumentDecisionStatus.REJECTED_INVALID:
+        raise BusinessRuleError(validation_decision.reason)
+    
     # Encrypt and persist
     encrypted = _get_fernet().encrypt(content)
     storage_dir = Path(settings.ENCRYPTED_STORAGE_DIR) / claim_id
     storage_dir.mkdir(parents=True, exist_ok=True)
     file_path = storage_dir / f"{uuid.uuid4()}.enc"
     file_path.write_bytes(encrypted)
-
-    # Extract structured data
-    extraction = await _extract(content, file.content_type or "", document_type)
 
     doc = Document(
         id=uuid.uuid4(),
@@ -77,6 +108,11 @@ async def upload_document(
         extracted_data=extraction.get("fields"),
         extraction_confidence=extraction.get("confidence"),
         requires_manual_review=extraction.get("confidence", 1.0) < 0.5,
+        # Validation results from DocumentGatekeeper
+        validation_status=validation_decision.status.value,
+        validation_reason=validation_decision.reason,
+        authenticity_metadata_json=validation_decision.metadata,
+        fraud_signal_weight=validation_decision.fraud_signal_weight,
     )
     db.add(doc)
     await log_action(
@@ -166,6 +202,7 @@ async def _extract(content: bytes, content_type: str, doc_type: str) -> dict[str
         # ── Step 1: Determine MIME type and prepare content part ──────────────
         is_pdf = content[:4] == b"%PDF" or "pdf" in (content_type or "").lower()
 
+        doc_text = ""  # Keep track of extracted text for validation
         if is_pdf:
             mime = "application/pdf"
             blob_data = base64.standard_b64encode(content).decode("utf-8")
@@ -173,7 +210,6 @@ async def _extract(content: bytes, content_type: str, doc_type: str) -> dict[str
             method = "gemini-native-pdf"
         else:
             # Non-PDF: try to get text via pypdf fallback, else raw bytes
-            doc_text = ""
             try:
                 from pypdf import PdfReader
                 reader = PdfReader(io.BytesIO(content))
@@ -184,7 +220,7 @@ async def _extract(content: bytes, content_type: str, doc_type: str) -> dict[str
                 doc_text = content.decode("utf-8", errors="replace").strip()
             if not doc_text:
                 logger.warning("No content to extract from document (type=%s)", content_type)
-                return {"fields": {}, "confidence": 0.0, "method": "none"}
+                return {"fields": {}, "confidence": 0.0, "method": "none", "raw_text": ""}
             content_part = doc_text
             method = "gemini-text"
 
@@ -243,7 +279,7 @@ Do not include any explanation or markdown — only the raw JSON object."""
 
         confidence = 0.90 if fields else 0.0
         logger.info("Extraction complete: %d fields via %s", len(fields), method)
-        return {"fields": fields, "confidence": confidence, "method": method}
+        return {"fields": fields, "confidence": confidence, "method": method, "raw_text": raw_text[:1000]}  # First 1000 chars
 
     except ImportError:
         logger.error("google-generativeai not installed — run: pip install google-generativeai")
@@ -251,7 +287,7 @@ Do not include any explanation or markdown — only the raw JSON object."""
         logger.warning("Gemini extraction failed: %s", exc, exc_info=True)
 
     # Fail-open: upload proceeds, document flagged for manual review
-    return {"fields": {}, "confidence": 0.0, "method": "none"}
+    return {"fields": {}, "confidence": 0.0, "method": "none", "raw_text": ""}
 
 
 # ── Update extracted data (manual correction) ──────────────────────────────────

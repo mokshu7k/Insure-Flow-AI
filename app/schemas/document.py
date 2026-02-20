@@ -26,6 +26,13 @@ class DocumentResponse(BaseModel):
     extracted_data: Optional[dict]
     extraction_confidence: Optional[float]
     requires_manual_review: bool
+    
+    # Validation fields
+    validation_status: Optional[str] = None
+    validation_reason: Optional[str] = None
+    authenticity_metadata_json: Optional[dict] = None
+    fraud_signal_weight: Optional[float] = None
+    
     created_at: datetime
 
 

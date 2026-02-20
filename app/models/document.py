@@ -26,6 +26,12 @@ class Document(Base):
     extraction_confidence: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
     requires_manual_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Document validation fields (from DocumentGatekeeper)
+    validation_status: Mapped[str | None] = mapped_column(String(32), nullable=True)  # accepted, rejected_invalid, flagged_high_risk, flagged_critical
+    validation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    authenticity_metadata_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # Detailed validation metadata
+    fraud_signal_weight: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)  # 0.0–1.0
+
     __table_args__ = (
         Index("ix_documents_claim_id", "claim_id"),
         Index("ix_documents_uploader_id", "uploader_id"),

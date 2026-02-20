@@ -29,6 +29,11 @@ google-generativeai
 langextract
 pypdf
 
+# Document Validation (QR extraction, image processing)
+Pillow
+pyzbar
+pdf2image
+
 # GCP Voice (speech-to-text / text-to-speech)
 # NOTE: grpcio (pulled by these) is the slow compile step on Windows.
 # Skip these two if you don't need voice features yet:

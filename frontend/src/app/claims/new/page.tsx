@@ -9,7 +9,7 @@ import api from "@/services/api";
 import type { ClaimType, DocumentResponse, DocumentType } from "@/types";
 import {
     Heart, Car, ReceiptText, Upload, X, CheckCircle2,
-    ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader, QrCode,
+    ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader,
 } from "lucide-react";
 
 // ── Document config per claim type ────────────────────────────────────────────
@@ -41,12 +41,6 @@ const DOC_CONFIG: Record<ClaimType, DocSpec[]> = {
         { type: "OTHER", label: "ID Proof", required: true, hint: "Aadhaar / PAN / Passport" },
         { type: "PRESCRIPTION", label: "Prescription", required: false, hint: "Doctor prescription" },
         { type: "OTHER", label: "Payment Receipts", required: false, hint: "Proof of payment" },
-    ],
-    CASHLESS: [
-        { type: "DISCHARGE_SUMMARY", label: "Discharge Summary", required: true, hint: "Hospital discharge letter" },
-        { type: "INVOICE", label: "Policy Document", required: true, hint: "Insurance policy PDF" },
-        { type: "OTHER", label: "ID Proof", required: true, hint: "Aadhaar / PAN / Passport" },
-        { type: "MEDICAL_REPORT", label: "Medical Report", required: false, hint: "Diagnostic reports" },
     ],
 };
 
@@ -91,7 +85,6 @@ const TYPE_META: Record<ClaimType, { icon: React.ReactNode; title: string; desc:
     HEALTH: { icon: <Heart size={22} />, title: "Health", desc: "Hospitalisation, surgery, day-care treatment", color: "var(--green)" },
     MOTOR: { icon: <Car size={22} />, title: "Motor", desc: "Vehicle damage, accident, theft", color: "var(--blue)" },
     REIMBURSEMENT: { icon: <ReceiptText size={22} />, title: "Reimbursement", desc: "Out-of-pocket medical expenses", color: "var(--amber)" },
-    CASHLESS: { icon: <QrCode size={22} />, title: "Cashless", desc: "Hospital cashless treatment via QR authorization", color: "var(--green)" },
 };
 
 // ── File drop zone ────────────────────────────────────────────────────────────

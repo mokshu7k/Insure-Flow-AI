@@ -40,6 +40,16 @@ async def run_fraud_analysis(claim_id: str, actor_id: str, role: str, db: AsyncS
     )
     doc = doc_result.scalar_one_or_none()
 
+    # Build document validation context
+    doc_validation_context = {}
+    if doc:
+        doc_validation_context = {
+            "validation_status": doc.validation_status,
+            "validation_reason": doc.validation_reason,
+            "fraud_signal_weight": float(doc.fraud_signal_weight) if doc.fraud_signal_weight else 0.0,
+            "authenticity_metadata": doc.authenticity_metadata_json or {},
+        }
+
     context = {
         "claim_id": claim_id,
         "claim_amount": float(claim.claim_amount),
@@ -54,6 +64,8 @@ async def run_fraud_analysis(claim_id: str, actor_id: str, role: str, db: AsyncS
         # Document context
         "extracted_data": doc.extracted_data if doc else {},
         "extracted_text": str(doc.extracted_data or {}),
+        # Document validation context (from DocumentGatekeeper)
+        "document_validation": doc_validation_context,
     }
 
     response = _engine.analyze(context)
@@ -101,3 +113,38 @@ async def run_fraud_analysis(claim_id: str, actor_id: str, role: str, db: AsyncS
     await db.commit()
     await db.refresh(assessment)
     return assessment
+
+
+async def get_document_validation_context(claim_id: str, db: AsyncSession) -> dict[str, Any]:
+    """
+    Get document validation context for narrative layer.
+    
+    This provides structured validation data from DocumentGatekeeper
+    to be used in Layer 6 narrative explanations.
+    
+    Args:
+        claim_id: Claim ID to get document validation for
+        db: Database session
+    
+    Returns:
+        Dictionary with validation context
+    """
+    doc_result = await db.execute(
+        select(Document).where(Document.claim_id == uuid.UUID(claim_id)).limit(1)
+    )
+    doc = doc_result.scalar_one_or_none()
+    
+    if not doc:
+        return {
+            "has_document": False,
+            "validation_status": None,
+        }
+    
+    return {
+        "has_document": True,
+        "validation_status": doc.validation_status,
+        "validation_reason": doc.validation_reason,
+        "fraud_signal_weight": float(doc.fraud_signal_weight) if doc.fraud_signal_weight else 0.0,
+        "authenticity_verified": doc.validation_status == "accepted",
+        "metadata": doc.authenticity_metadata_json or {},
+    }
