@@ -1,0 +1,10 @@
+import api from "./api";
+import type { AdjusterChatRequest, AdjusterChatResponse, AdjusterReportResponse } from "@/types";
+
+export const adjusterService = {
+    chat: (data: AdjusterChatRequest) =>
+        api.post<AdjusterChatResponse>("/adjuster/chat", data).then((r) => r.data),
+
+    generateReport: (claimId: string) =>
+        api.post<AdjusterReportResponse>(`/adjuster/report/${claimId}`).then((r) => r.data),
+};
