@@ -16,12 +16,12 @@ router = APIRouter(prefix="/adjuster", tags=["adjuster-agent"])
 
 
 class ChatRequest(BaseModel):
-    claim_id: str
+    claim_id: str | None = None
     message: str
 
 
 class ChatResponse(BaseModel):
-    reply: str
+    response: str
     report: str | None = None   # Populated when generate_report tool was invoked
 
 
@@ -43,7 +43,7 @@ async def adjuster_chat(
 
     initial_state: AdjusterState = {
         "messages": [HumanMessage(content=payload.message)],
-        "claim_id": payload.claim_id,
+        "claim_id": payload.claim_id or "",
         "adjuster_id": str(current_user.id),
         "context": {},
         "report": None,
@@ -53,11 +53,11 @@ async def adjuster_chat(
     result = await graph.ainvoke(initial_state, config=config)
 
     last_ai = next(
-        (m for m in reversed(result["messages"]) if hasattr(m, "content") and not hasattr(m, "tool_calls")),
+        (m for m in reversed(result["messages"]) if hasattr(m, "content") and not getattr(m, "tool_calls", None)),
         None,
     )
     reply = last_ai.content if last_ai else "No response generated."
-    return ChatResponse(reply=reply, report=result.get("report"))
+    return ChatResponse(response=reply, report=result.get("report"))
 
 
 @router.post("/report/{claim_id}")
@@ -67,14 +67,26 @@ async def generate_claim_report(
     current_user: User = Depends(get_current_user),
 ):
     """Generate a comprehensive Markdown claim report for adjuster review."""
+    import logging
+    from datetime import datetime, timezone
     from app.core.rbac import require_any_role
     require_any_role(["INSURER_ADMIN", "CLAIM_ADJUSTER"])(current_user)
 
     from app.ai_agents.adjuster.tools import generate_report
 
-    result = await generate_report(
-        claim_id=claim_id,
-        db=db,
-        adjuster_id=str(current_user.id),
-    )
-    return result
+    try:
+        result = await generate_report(
+            claim_id=claim_id,
+            db=db,
+            adjuster_id=str(current_user.id),
+        )
+        if "error" in result:
+            return result
+        return {
+            "report": result.get("report", ""),
+            "claim_id": claim_id,
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        logging.getLogger(__name__).error("generate_claim_report error: %s", exc, exc_info=True)
+        return {"error": f"Report generation failed: {exc}"}

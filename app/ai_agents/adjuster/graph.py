@@ -100,26 +100,40 @@ _TOOL_DISPATCH: dict[str, Any] = {
 
 async def gemini_node(state: AdjusterState, config: dict) -> dict:
     """Main Gemini node — decides which tools to call and generates a final reply."""
-    llm = _get_llm()
-    if not llm:
-        return {
-            "messages": [AIMessage(content="AI unavailable — check GCP_API_KEY.")],
-        }
+    try:
+        llm = _get_llm()
+        if not llm:
+            return {
+                "messages": [AIMessage(content="AI unavailable — check GCP_API_KEY.")],
+            }
 
-    llm_with_tools = llm.bind_tools(_TOOLS)
+        llm_with_tools = llm.bind_tools(_TOOLS)
 
-    system_prompt = (
-        "You are an expert insurance claim adjuster AI assistant. "
-        f"You are helping process claim ID: {state['claim_id']}. "
-        "Use the available tools to pull claim data, documents, fraud assessments, and history. "
-        "Always ground your answers in the data you retrieve. "
-        "When asked to generate a report, use the generate_report tool."
-    )
+        claim_id = state.get("claim_id") or ""
+        if claim_id:
+            system_prompt = (
+                "You are an expert insurance claim adjuster AI assistant. "
+                f"You are helping process claim ID: {claim_id}. "
+                "Use the available tools to pull claim data, documents, fraud assessments, and history. "
+                "Always ground your answers in the data you retrieve. "
+                "When asked to generate a report, use the generate_report tool."
+            )
+        else:
+            system_prompt = (
+                "You are an expert insurance claim adjuster AI assistant for InsureFlow. "
+                "No specific claim is selected. You can answer general questions about insurance claims, "
+                "policies, fraud patterns, and claim processing procedures. "
+                "If the user asks about a specific claim, ask them to select it from the sidebar."
+            )
 
-    from langchain_core.messages import SystemMessage
-    messages = [SystemMessage(content=system_prompt)] + state["messages"]
-    response = await llm_with_tools.ainvoke(messages)
-    return {"messages": [response]}
+        from langchain_core.messages import SystemMessage
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        response = await llm_with_tools.ainvoke(messages)
+        return {"messages": [response]}
+    except Exception as exc:
+        logger.error("Adjuster gemini_node error: %s", exc)
+        err_msg = AIMessage(content="I'm having trouble processing your request. Please try again shortly.")
+        return {"messages": [err_msg]}
 
 
 async def tool_execution_node(state: AdjusterState, config: dict) -> dict:

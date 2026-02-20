@@ -70,7 +70,19 @@ async def send_message(
 ):
     session = await _get_or_create_session(session_id, str(current_user.id), db)
     # Restore + extend state
-    saved_messages = session.graph_state.get("messages", [])
+    saved_messages_raw = session.graph_state.get("messages", [])
+    
+    # Convert saved dict messages back to LangChain Message objects
+    from langchain_core.messages import AIMessage
+    saved_messages = []
+    for msg in saved_messages_raw:
+        role = msg.get("role", "human")
+        content = msg.get("content", "")
+        if role in ("ai", "assistant"):
+            saved_messages.append(AIMessage(content=content))
+        else:
+            saved_messages.append(HumanMessage(content=content))
+    
     state = {
         "messages": saved_messages + [HumanMessage(content=payload.message)],
         "user_id": str(current_user.id),
@@ -120,8 +132,21 @@ async def send_voice(
 
     # Route through the same text agent
     session = await _get_or_create_session(session_id, str(current_user.id), db)
+    
+    # Convert saved dict messages back to LangChain Message objects
+    from langchain_core.messages import AIMessage
+    saved_messages_raw = session.graph_state.get("messages", [])
+    saved_messages = []
+    for msg in saved_messages_raw:
+        role = msg.get("role", "human")
+        content = msg.get("content", "")
+        if role in ("ai", "assistant"):
+            saved_messages.append(AIMessage(content=content))
+        else:
+            saved_messages.append(HumanMessage(content=content))
+    
     state = {
-        "messages": session.graph_state.get("messages", []) + [HumanMessage(content=text)],
+        "messages": saved_messages + [HumanMessage(content=text)],
         "user_id": str(current_user.id),
         "session_id": session_id,
         "intent": None,

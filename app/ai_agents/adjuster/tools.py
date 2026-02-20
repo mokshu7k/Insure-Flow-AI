@@ -162,13 +162,14 @@ async def generate_report(claim_id: str, *, db, adjuster_id: str) -> dict[str, A
     if not settings.GCP_API_KEY:
         return {"error": "No GCP_API_KEY configured"}
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=settings.GCP_API_KEY,
-        temperature=0.2,
-    )
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            google_api_key=settings.GCP_API_KEY,
+            temperature=0.2,
+        )
 
-    prompt = f"""You are a senior insurance claims adjuster AI. Write a comprehensive claim processing report in Markdown.
+        prompt = f"""You are a senior insurance claims adjuster AI. Write a comprehensive claim processing report in Markdown.
 
 ## Input Data
 
@@ -202,5 +203,8 @@ Write the report with these exact sections:
 
 Be concise, factual, and professional. Use tables where appropriate."""
 
-    response = llm.invoke(prompt)
-    return {"report": response.content}
+        response = await llm.ainvoke(prompt)
+        return {"report": response.content}
+    except Exception as exc:
+        logger.error("generate_report LLM error: %s", exc)
+        return {"error": f"Report generation failed: {exc}"}

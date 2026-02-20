@@ -23,12 +23,14 @@ from app.ai_agents.agent.state import AgentState
 
 logger = logging.getLogger(__name__)
 
+
 SYSTEM_PROMPT = """You are InsureFlow AI, an intelligent insurance claims assistant.
 You have access to tools that can look up real data for the user.
 Always use the tools when the user asks about specific claims, fraud, or their account.
 Be professional, concise, and empathetic.
 When referencing monetary amounts, use Indian Rupee formatting (₹).
-If you need a claim ID and the user hasn't provided one, ask them for it."""
+If you need a claim ID and the user hasn't provided one, ask them for it.
+"""
 
 
 def _build_tools(db, user_id: str) -> list:
@@ -71,8 +73,9 @@ def _get_llm(tools: list):
     from langchain_google_genai import ChatGoogleGenerativeAI
     from app.config import settings
 
+    # HARDCODED - DO NOT CHANGE
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         google_api_key=settings.GCP_API_KEY,
         temperature=0.3,
     )
