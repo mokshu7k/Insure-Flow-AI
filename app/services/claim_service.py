@@ -27,7 +27,7 @@ async def create_claim(payload: ClaimCreate, user_id: str, db: AsyncSession) -> 
     db.add(claim)
     await log_action(
         db=db,
-        action_type=AuditAction.CLAIM_SUBMITTED,
+        action_type=AuditAction.CLAIM_CREATED,
         entity_type="CLAIM",
         actor_id=user_id,
         entity_id=str(claim.id),
@@ -91,7 +91,7 @@ async def update_claim(
         claim.description = payload.description
     await log_action(
         db=db,
-        action_type=AuditAction.CLAIM_SUBMITTED,
+        action_type=AuditAction.CLAIM_CREATED,
         entity_type="CLAIM",
         actor_id=user_id,
         entity_id=claim_id,
@@ -116,7 +116,7 @@ async def update_claim_status(
     claim.status = new_status
     await log_action(
         db=db,
-        action_type=AuditAction.STATUS_CHANGED,
+        action_type=AuditAction.CLAIM_STATUS_CHANGED,
         entity_type="CLAIM",
         actor_id=actor_id,
         entity_id=claim_id,

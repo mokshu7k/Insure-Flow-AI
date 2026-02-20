@@ -5,6 +5,7 @@ import { CommandLayout } from "@/components/layout/CommandLayout";
 import { AuditTrailPanel } from "@/components/layout/AuditTrailPanel";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { FraudScoreBadge, StatusPill, MonoValue } from "@/components/ui";
+import { EditableExtractedData } from "@/components/ui/EditableExtractedData";
 import { useAuthStore, useIsAdmin } from "@/store/authStore";
 import { fraudService } from "@/services/fraudService";
 import { claimService } from "@/services/claimService";
@@ -72,13 +73,15 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [uploadType, setUploadType] = useState("INVOICE");
     const [uploading, setUploading] = useState(false);
+    const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+    const [docError, setDocError] = useState<string | null>(null);
 
     const load = async () => {
         setLoading(true);
         try {
             const [c, docs] = await Promise.all([
                 claimService.get(id),
-                documentService.list(id),
+                documentService.listForClaim(id),
             ]);
             setClaim(c);
             setDocuments(docs);
@@ -224,17 +227,47 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     <div style={{ color: "var(--text-muted)", fontSize: "0.8125rem", textAlign: "center", padding: "16px 0" }}>No documents uploaded</div>
                                 )}
                                 {documents.map((doc) => (
-                                    <div key={doc.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-                                        <FileText size={14} color="var(--text-muted)" />
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: "0.8125rem", fontWeight: 500 }}>{doc.document_type.replace(/_/g, " ")}</div>
-                                            {doc.original_filename && <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>{doc.original_filename}</div>}
-                                        </div>
-                                        {doc.requires_manual_review && <AlertTriangle size={13} color="var(--amber)" />}
-                                        {doc.has_ocr_data && (
-                                            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>
-                                                OCR {doc.ocr_confidence ? `${(doc.ocr_confidence * 100).toFixed(0)}%` : "✓"}
-                                            </span>
+                                    <div key={doc.id}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedDocId(selectedDocId === doc.id.toString() ? null : doc.id.toString())}
+                                            style={{
+                                                width: "100%",
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 10,
+                                                padding: "8px 0",
+                                                borderBottom: "1px solid var(--border)",
+                                                background: selectedDocId === doc.id.toString() ? "var(--bg-surface)" : "transparent",
+                                                border: "none",
+                                                cursor: "pointer",
+                                                color: "inherit",
+                                                textAlign: "left",
+                                            }}
+                                        >
+                                            <FileText size={14} color="var(--text-muted)" />
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: "0.8125rem", fontWeight: 500 }}>{doc.document_type.replace(/_/g, " ")}</div>
+                                                {doc.original_filename && <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>{doc.original_filename}</div>}
+                                            </div>
+                                            {doc.requires_manual_review && <AlertTriangle size={13} color="var(--amber)" />}
+                                            {doc.extracted_data && Object.keys(doc.extracted_data).length > 0 && (
+                                                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>
+                                                    {doc.extraction_confidence ? `${(doc.extraction_confidence * 100).toFixed(0)}%` : "✓"}
+                                                </span>
+                                            )}
+                                        </button>
+                                        {selectedDocId === doc.id.toString() && doc.extracted_data && Object.keys(doc.extracted_data).length > 0 && (
+                                            <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
+                                                <EditableExtractedData
+                                                    document={doc}
+                                                    onUpdate={(updated) => {
+                                                        setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+                                                        setSelectedDocId(null);
+                                                    }}
+                                                    onError={(error) => setDocError(error)}
+                                                />
+                                            </div>
                                         )}
                                     </div>
                                 ))}

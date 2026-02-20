@@ -27,3 +27,9 @@ class DocumentResponse(BaseModel):
     extraction_confidence: Optional[float]
     requires_manual_review: bool
     created_at: datetime
+
+
+class UpdateExtractedDataRequest(BaseModel):
+    """Update extracted data for a document."""
+    extracted_data: dict[str, Any]
+    requires_manual_review: Optional[bool] = None
