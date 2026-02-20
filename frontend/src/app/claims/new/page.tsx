@@ -1,14 +1,15 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { CommandLayout } from "@/components/layout/CommandLayout";
 import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
+import api from "@/services/api";
 import type { ClaimType, DocumentResponse, DocumentType } from "@/types";
 import {
     Heart, Car, ReceiptText, Upload, X, CheckCircle2,
-    ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText,
+    ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader,
 } from "lucide-react";
 
 // ── Document config per claim type ────────────────────────────────────────────
@@ -173,10 +174,56 @@ function WizardContent() {
     const [uploadError, setUploadError] = useState<string | null>(null);
 
     // Step 3
-    const [claimId, setClaimId] = useState<string | null>(null);
-    const [uploadedDocs, setUploadedDocs] = useState<DocumentResponse[]>([]);
     const [claimAmount, setClaimAmount] = useState("");
     const [description, setDescription] = useState("");
+
+    // Speech-to-text
+    const [isRecording, setIsRecording] = useState(false);
+    const [isTranscribing, setIsTranscribing] = useState(false);
+    const [sttError, setSttError] = useState<string | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const chunksRef = useRef<Blob[]>([]);
+
+    const startRecording = async () => {
+        setSttError(null);
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mr = new MediaRecorder(stream);
+            chunksRef.current = [];
+            mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+            mr.onstop = async () => {
+                stream.getTracks().forEach((t) => t.stop());
+                const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+                setIsTranscribing(true);
+                try {
+                    const form = new FormData();
+                    form.append("file", blob, "recording.webm");
+                    const { data } = await api.post<{ text: string }>("/speech/transcribe", form, {
+                        headers: { "Content-Type": "multipart/form-data" },
+                    });
+                    if (data.text) {
+                        setDescription((prev) => prev ? prev + " " + data.text : data.text);
+                    }
+                } catch {
+                    setSttError("Transcription failed — try again");
+                } finally {
+                    setIsTranscribing(false);
+                }
+            };
+            mediaRecorderRef.current = mr;
+            mr.start();
+            setIsRecording(true);
+        } catch {
+            setSttError("Microphone access denied");
+        }
+    };
+
+    const stopRecording = () => {
+        mediaRecorderRef.current?.stop();
+        setIsRecording(false);
+    };
+    const [claimId, setClaimId] = useState<string | null>(null);
+    const [uploadedDocs, setUploadedDocs] = useState<DocumentResponse[]>([]);
 
     // Step 4
     const [submitting, setSubmitting] = useState(false);
@@ -193,7 +240,13 @@ function WizardContent() {
             const candidates = ["total_amount", "claim_amount", "amount", "net_amount", "bill_amount"];
             for (const key of candidates) {
                 if (d[key] !== undefined && d[key] !== null) {
-                    const val = parseFloat(String(d[key]).replace(/[^0-9.]/g, ""));
+                    const raw = d[key];
+                    // field may be {text: "42500", value: 42500} or a plain scalar
+                    const textVal =
+                        typeof raw === "object" && raw !== null
+                            ? (raw as Record<string, unknown>).value ?? (raw as Record<string, unknown>).text
+                            : raw;
+                    const val = parseFloat(String(textVal).replace(/[^0-9.]/g, ""));
                     if (!isNaN(val) && val > 0) return String(val);
                 }
             }
@@ -446,14 +499,21 @@ function WizardContent() {
                                         </div>
                                         {doc.extracted_data && Object.keys(doc.extracted_data).length > 0 ? (
                                             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "2px 12px" }}>
-                                                {Object.entries(doc.extracted_data).slice(0, 8).map(([k, v]) => (
-                                                    <div key={k} style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>
-                                                        <span style={{ textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</span>:{" "}
-                                                        <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                                                            {String(v).slice(0, 40)}
-                                                        </span>
-                                                    </div>
-                                                ))}
+                                                {Object.entries(doc.extracted_data).slice(0, 8).map(([k, v]) => {
+                                                    const display = (
+                                                        typeof v === "object" && v !== null
+                                                            ? (v as Record<string, unknown>).text ?? JSON.stringify(v)
+                                                            : v
+                                                    );
+                                                    return (
+                                                        <div key={k} style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>
+                                                            <span style={{ textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</span>:{" "}
+                                                            <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+                                                                {String(display).slice(0, 40)}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         ) : (
                                             <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>No structured data extracted</span>
@@ -479,15 +539,48 @@ function WizardContent() {
                             />
                         </div>
                         <div style={{ marginBottom: 20 }}>
-                            <label style={{ fontSize: "0.75rem", fontWeight: 500, display: "block", marginBottom: 4 }}>
-                                Description
+                            <label style={{ fontSize: "0.75rem", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                                <span>Description</span>
+                                <button
+                                    type="button"
+                                    title={isRecording ? "Stop recording" : "Dictate description"}
+                                    onClick={isRecording ? stopRecording : startRecording}
+                                    disabled={isTranscribing}
+                                    style={{
+                                        display: "flex", alignItems: "center", gap: 5,
+                                        padding: "3px 10px", borderRadius: 20,
+                                        border: `1px solid ${isRecording ? "var(--red, #ef4444)" : "var(--border)"}`,
+                                        background: isRecording ? "rgba(239,68,68,0.08)" : "var(--bg-surface)",
+                                        color: isRecording ? "var(--red, #ef4444)" : "var(--text-muted)",
+                                        cursor: isTranscribing ? "wait" : "pointer",
+                                        fontSize: "0.6875rem", fontWeight: 500,
+                                        transition: "all 150ms",
+                                    }}
+                                >
+                                    {isTranscribing ? (
+                                        <><Loader size={12} className="spin" /> Transcribing…</>
+                                    ) : isRecording ? (
+                                        <><MicOff size={12} /> Stop</>
+                                    ) : (
+                                        <><Mic size={12} /> Dictate</>
+                                    )}
+                                </button>
                             </label>
+                            {isRecording && (
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontSize: "0.6875rem", color: "var(--red, #ef4444)" }}>
+                                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--red, #ef4444)", display: "inline-block", animation: "pulse 1s infinite" }} />
+                                    Recording… click Stop when done
+                                </div>
+                            )}
+                            {sttError && (
+                                <div style={{ fontSize: "0.6875rem", color: "var(--red, #ef4444)", marginBottom: 4 }}>{sttError}</div>
+                            )}
                             <textarea
                                 className="input"
                                 rows={3}
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                placeholder="Brief description of the claim…"
+                                placeholder={isRecording ? "Listening…" : "Brief description of the claim… or click Dictate to speak"}
                                 style={{ width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }}
                             />
                         </div>

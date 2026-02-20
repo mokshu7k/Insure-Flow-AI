@@ -24,8 +24,10 @@ langgraph
 langchain-core
 langchain-google-genai
 
-# Document Extraction — LangExtract (Gemini-powered, no OCR, no torch)
+# Document Extraction — Gemini native multimodal (handles text + scanned PDFs)
+google-generativeai
 langextract
+pypdf
 
 # GCP Voice (speech-to-text / text-to-speech)
 # NOTE: grpcio (pulled by these) is the slow compile step on Windows.

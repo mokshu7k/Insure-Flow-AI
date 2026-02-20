@@ -16,10 +16,16 @@ def _utcnow() -> datetime:
 class Base(DeclarativeBase):
     """
     Shared base for all models.
-    All tables get created_at automatically.
+    All tables get created_at and updated_at automatically.
     """
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
         nullable=False,
     )

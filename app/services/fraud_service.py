@@ -92,7 +92,7 @@ async def run_fraud_analysis(claim_id: str, actor_id: str, role: str, db: AsyncS
 
     await log_action(
         db=db,
-        action_type=AuditAction.FRAUD_ANALYZED,
+        action_type=AuditAction.FRAUD_ANALYSIS_RUN,
         entity_type="CLAIM",
         actor_id=actor_id,
         entity_id=claim_id,
