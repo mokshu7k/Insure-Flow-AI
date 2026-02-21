@@ -20,8 +20,8 @@ class FraudAssessmentResponse(BaseModel):
     behavioral_flags: list[Any]
     document_flags: list[Any]
     network_flags: list[Any]
-    layer_scores: Optional[dict[str, float]] = None    # Per-layer numeric scores
-    layer_details: Optional[dict[str, Any]] = None     # Full per-layer output (flags, method, ai_degraded)
+    layer_scores: Optional[dict[str, Any]] = None    # Per-layer complete info (score, flags, method, etc.)
+    layer_details: Optional[dict[str, Any]] = None   # Full per-layer raw output (flags, method, ai_degraded)
     explanation_text: Optional[str]
     ai_degraded_mode: bool
     ml_model_used: bool

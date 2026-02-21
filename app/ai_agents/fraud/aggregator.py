@@ -12,21 +12,33 @@ from app.ai_agents.fraud.config import cfg
 def aggregate(layer_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """
     Compute final weighted score from per-layer results.
-    Returns a clean dict — no duplicated keys between top-level and nested.
+    Returns a clean dict with proper structure for frontend display.
     """
     weights = cfg.LAYER_WEIGHTS
     final_score = 0.0
-    layer_scores: dict[str, float] = {}
+    layer_scores: dict[str, dict[str, Any]] = {}  # Changed to include full layer info
     all_flags: list[str] = []
 
     for layer_name, weight in weights.items():
         result = layer_results.get(layer_name, {})
         score = float(result.get("score", 0.0))
-        layer_scores[layer_name] = score
-        final_score += score * weight
+        
         # Collect flags/signals (whatever key the layer uses)
+        flags = []
         for flag_key in ("flags", "signals"):
-            all_flags.extend(result.get(flag_key, []))
+            flags.extend(result.get(flag_key, []))
+        
+        # Store complete layer info for frontend display
+        layer_scores[layer_name] = {
+            "score": score,
+            "flags": flags,
+            "layer": result.get("layer", layer_name),
+            "method": result.get("method"),
+            "ai_degraded": result.get("ai_degraded", False),
+        }
+        
+        final_score += score * weight
+        all_flags.extend(flags)
 
     final_score = min(final_score, 1.0)
     risk_level = _risk_level(final_score)
@@ -34,7 +46,7 @@ def aggregate(layer_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return {
         "final_score": round(final_score, 4),
         "risk_level": risk_level,
-        "layer_scores": layer_scores,  # flat, no duplication
+        "layer_scores": layer_scores,  # Now includes full layer structure
         "all_flags": all_flags,
     }
 

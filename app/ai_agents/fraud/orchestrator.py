@@ -86,9 +86,18 @@ class FraudEngineOrchestrator:
 
         # Aggregate scores
         agg = aggregator.aggregate(layer_results)
+        
+        # CRITICAL OVERRIDE: If document validation flagged as critical, override final score
+        doc_validation = claim_context.get("document_validation", {})
+        if doc_validation.get("validation_status") == "flagged_critical":
+            logger.warning("Document flagged as CRITICAL - overriding fraud score to 0.95")
+            agg["final_score"] = 0.95
+            agg["risk_level"] = "VERY_HIGH"
+            all_flags = ["DOCUMENT_CRITICAL_OVERRIDE"] + agg["all_flags"]
+        else:
+            all_flags = agg["all_flags"]
 
         # Build human-readable explanation via Gemini (or fallback to string concat)
-        all_flags = agg["all_flags"]
         explanation = self._build_explanation(
             layer_results=layer_results,
             agg=agg,

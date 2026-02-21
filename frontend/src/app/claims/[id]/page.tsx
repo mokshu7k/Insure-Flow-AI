@@ -404,7 +404,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     {/* Risk level */}
                                     {assessment.risk_level && (
                                         <div style={{ textAlign: "center", marginBottom: 16 }}>
-                                            <span className={`pill ${assessment.risk_level === "HIGH" || assessment.risk_level === "CRITICAL" ? "pill-rejected" : assessment.risk_level === "MEDIUM" ? "pill-review" : "pill-approved"}`}>
+                                            <span className={`pill ${assessment.risk_level === "HIGH" || assessment.risk_level === "VERY_HIGH" || assessment.risk_level === "CRITICAL" ? "pill-rejected" : assessment.risk_level === "MEDIUM" ? "pill-review" : "pill-approved"}`}>
                                                 {assessment.risk_level} RISK
                                             </span>
                                         </div>

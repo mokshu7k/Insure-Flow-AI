@@ -2,6 +2,7 @@
 Layer 4 — Document Consistency Analysis
 Uses extracted_data (from LangExtract/extract-thinker) to check
 field consistency, date logic, and amount reconciliation.
+Also integrates DocumentGatekeeper validation results.
 """
 from __future__ import annotations
 
@@ -15,6 +16,28 @@ def run(context: dict[str, Any]) -> dict[str, Any]:
     extracted = context.get("extracted_data") or {}
     claim_amount = float(context.get("claim_amount", 0))
     claim_type = context.get("claim_type", "")
+    
+    # === NEW: Integrate DocumentGatekeeper validation results ===
+    doc_validation = context.get("document_validation") or {}
+    validation_status = doc_validation.get("validation_status", "")
+    validation_reason = doc_validation.get("validation_reason", "")
+    fraud_signal_weight = float(doc_validation.get("fraud_signal_weight", 0.0))
+    
+    # CRITICAL: Document validation flags should significantly increase fraud score
+    if validation_status == "flagged_critical":
+        flags.append(f"DOCUMENT_FLAGGED_CRITICAL:{validation_reason}")
+        score = max(score, 0.95)  # Very high score for critical flags
+    elif validation_status == "flagged_high_risk":
+        flags.append(f"DOCUMENT_FLAGGED_HIGH_RISK:{validation_reason}")
+        score = max(score, 0.75)  # High score for risky documents
+    elif validation_status == "rejected_invalid":
+        flags.append(f"DOCUMENT_REJECTED:{validation_reason}")
+        score = max(score, 0.85)  # High score if document was rejected
+    
+    # Apply fraud signal weight from validation
+    if fraud_signal_weight > 0.5:
+        flags.append(f"HIGH_FRAUD_SIGNAL_WEIGHT:{fraud_signal_weight:.2f}")
+        score = max(score, fraud_signal_weight)
 
     # Check 1: Extraction confidence — if low, flag for manual review
     confidence = float(extracted.get("confidence", 1.0))

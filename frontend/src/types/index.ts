@@ -46,7 +46,7 @@ export interface FraudAssessment {
     id: string;
     claim_id: string;
     fraud_score: number;
-    risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+    risk_level: "MINIMAL" | "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH" | "CRITICAL" | null;
     explanation_text: string | null;
     layer_scores: Record<string, LayerScore> | null;
     layer_details: Record<string, unknown> | null;
