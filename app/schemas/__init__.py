@@ -5,7 +5,6 @@ from app.schemas.auth import (
 from app.schemas.claim import (
     ClaimCreate, ClaimResponse, ClaimListResponse, ClaimStatusUpdate
 )
-from app.schemas.document import DocumentResponse, ExtractionResult
 from app.schemas.fraud import FraudAssessmentResponse
 from app.schemas.settlement import SettlementCreate, SettlementResponse, SettlementStatusUpdate
 from app.schemas.compliance import (
@@ -20,7 +19,6 @@ from app.schemas.dashboard import DashboardOverview
 __all__ = [
     "RegisterRequest", "LoginRequest", "TokenResponse", "UserResponse", "RefreshResponse",
     "ClaimCreate", "ClaimResponse", "ClaimListResponse", "ClaimStatusUpdate",
-    "DocumentResponse", "ExtractionResult",
     "FraudAssessmentResponse",
     "SettlementCreate", "SettlementResponse", "SettlementStatusUpdate",
     "ConsentGiveRequest", "ConsentStatusResponse", "AuditLogResponse", "DeletionRequest",

@@ -101,7 +101,7 @@ async def get_claim_documents(claim_id: str, *, db, user_id: str) -> dict[str, A
     """
     from sqlalchemy import select
     from app.models.claim import Claim
-    from app.models.document import Document
+    from app.models.claim_document import ClaimDocument
     try:
         cr = await db.execute(
             select(Claim.id).where(
@@ -113,7 +113,7 @@ async def get_claim_documents(claim_id: str, *, db, user_id: str) -> dict[str, A
             return {"error": "Claim not found or does not belong to you."}
 
         result = await db.execute(
-            select(Document).where(Document.claim_id == uuid.UUID(claim_id))
+            select(ClaimDocument).where(ClaimDocument.claim_id == uuid.UUID(claim_id))
         )
         docs = result.scalars().all()
         return {
@@ -122,7 +122,7 @@ async def get_claim_documents(claim_id: str, *, db, user_id: str) -> dict[str, A
             "documents": [
                 {
                     "id":             str(d.id),
-                    "type":           d.document_type,
+                    "type":           d.document_type_code,
                     "filename":       d.original_filename,
                     "extracted_data": d.extracted_data,
                     "confidence":     float(d.extraction_confidence) if d.extraction_confidence else None,
@@ -297,7 +297,7 @@ async def get_claim_timeline(claim_id: str, *, db, user_id: str) -> dict[str, An
     """
     from sqlalchemy import select
     from app.models.claim import Claim
-    from app.models.document import Document
+    from app.models.claim_document import ClaimDocument
     from app.models.fraud import FraudAssessment
     from app.models.settlement import Settlement
     try:
@@ -320,13 +320,13 @@ async def get_claim_timeline(claim_id: str, *, db, user_id: str) -> dict[str, An
         })
 
         doc_result = await db.execute(
-            select(Document).where(Document.claim_id == uuid.UUID(claim_id))
+            select(ClaimDocument).where(ClaimDocument.claim_id == uuid.UUID(claim_id))
         )
         for d in doc_result.scalars().all():
             events.append({
                 "event":  "Document Uploaded",
                 "date":   str(d.created_at)[:19] if d.created_at else None,
-                "detail": f"{d.document_type}: {d.original_filename}",
+                "detail": f"{d.document_type_code}: {d.original_filename}",
             })
 
         fa_result = await db.execute(

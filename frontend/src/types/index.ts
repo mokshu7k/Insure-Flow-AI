@@ -6,9 +6,29 @@ export interface User { id: string; email: string; role: UserRole; is_active: bo
 export type UserRole = "CUSTOMER" | "PROVIDER" | "INSURER_ADMIN" | "AUDITOR" | "CLAIM_ADJUSTER";
 
 
+// ── Policies ──────────────────────────────────────
+export interface Policy {
+    id: string;
+    user_id: string;
+    policy_number: string;
+    policy_type: "HEALTH" | "MOTOR" | "REIMBURSEMENT" | "CASHLESS";
+    status: "ACTIVE" | "EXPIRED" | "CANCELLED";
+    sum_insured: number;
+    premium_amount: number;
+    start_date: string;
+    end_date: string;
+    insured_name: string | null;
+    insured_dob: string | null;
+    nominee_name: string | null;
+    meta_data: Record<string, unknown> | null;
+    created_at: string;
+    updated_at: string;
+}
+export interface PolicyListResponse { items: Policy[]; total: number; }
+
 // ── Claims ────────────────────────────────────────
 export interface ClaimCreate {
-    policy_number: string;
+    // policy_number is NOT sent — backend resolves it from the user's active policy
     claim_type: ClaimType;
     claim_amount?: number;
     description?: string;
@@ -34,7 +54,8 @@ export function canTransitionTo(currentStatus: string, targetStatus: string): bo
 
 export interface Claim {
     id: string;
-    policy_number: string;
+    policy_id: string | null;
+    policy_number: string;  // denormalised from the resolved policy
     user_id: string;
     claim_type: ClaimType;
     claim_amount: number | null;
@@ -42,6 +63,7 @@ export interface Claim {
     status: ClaimStatus;
     fraud_score: number | null;
     adjuster_notes: string | null;
+    verified_data: Record<string, unknown> | null;
     created_at: string;
     updated_at: string;
 }
@@ -77,24 +99,71 @@ export interface FraudAssessment {
 }
 
 // ── Documents ─────────────────────────────────────
-export type DocumentType = "INVOICE" | "PRESCRIPTION" | "MEDICAL_REPORT" | "DISCHARGE_SUMMARY" | "POLICE_REPORT" | "VEHICLE_RC" | "ESTIMATE" | "OTHER";
-export interface DocumentResponse {
-    id: string; claim_id: string; document_type: DocumentType;
+// Legacy document type union — used in the new-claim wizard DocSpec.
+export type DocumentType = "AADHAAR" | "PAN" | "HOSPITAL_BILL" | "DISCHARGE_SUMMARY" | "PRESCRIPTION" | "CLAIM_FORM" | "LAB_REPORT" | "PHARMACY_BILL" | "PREAUTH_LETTER" | "FIR_REPORT" | "DEATH_CERTIFICATE" | "AMBULANCE_RECEIPT" | "OTHER";
+
+// ── ClaimDocumentResponse — new template-aware OCR pipeline ──
+export interface ClaimDocumentResponse {
+    id: string;
+    claim_id: string;
+    document_type: string;         // alias for document_type_code (set by backend)
+    document_type_code: string;
+    document_requirement_id: string | null;
     original_filename: string | null;
     content_type: string | null;
+    storage_path: string;
+    // OCR / Extraction
+    ocr_status: string;            // PENDING | PROCESSING | COMPLETED | FAILED
     extracted_data: Record<string, unknown> | null;
     extraction_confidence: number | null;
-    requires_manual_review: boolean;
-    
-    // Document validation fields (from DocumentGatekeeper)
+    extraction_template_used: Record<string, unknown> | null;
+    // Promoted columns (visible in review step)
+    patient_name: string | null;
+    hospital_name: string | null;
+    doctor_name: string | null;
+    diagnosis: string | null;
+    admission_date: string | null;
+    discharge_date: string | null;
+    total_amount: number | null;
+    document_date: string | null;
+    document_number: string | null;
+    entity_gstin: string | null;
+    entity_registration_no: string | null;
+    // Validation
     validation_status: string | null;
     validation_reason: string | null;
+    missing_fields: string[] | null;
+    requires_manual_review: boolean;
+    // Fraud / Authenticity
     authenticity_metadata_json: Record<string, unknown> | null;
     fraud_signal_weight: number | null;
-    
+    rejection_reason: string | null;
     created_at: string;
 }
-export interface ExtractionResult { extracted_fields: Record<string, unknown>; raw_text: string; confidence: number; requires_manual_review: boolean; }
+
+export interface ClaimDocumentListResponse {
+    items: ClaimDocumentResponse[];
+    total: number;
+}
+
+// ── Document requirements per policy ──
+export interface DocumentRequirement {
+    id: string;
+    document_type_code: string;
+    display_name: string;
+    is_compulsory: boolean;
+    allowed_mime_types: string[] | null;
+    max_file_size_mb: number | null;
+    instructions: string | null;
+    field_keys: string[];          // required field keys (for hints)
+}
+
+export interface DocumentRequirementsListResponse {
+    policy_id: string;
+    policy_type_id: string | null;
+    items: DocumentRequirement[];
+    total: number;
+}
 
 // ── QR ────────────────────────────────────────────
 export interface QRAuthorizationCreate { claim_id: string; provider_id: string; approved_limit: number; expiry_minutes?: number; }

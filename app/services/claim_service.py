@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import uuid
+from datetime import date
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,28 +11,90 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.constants import AuditAction, ClaimStatus
 from app.core.exceptions import BusinessRuleError, NotFoundError, PermissionDeniedError
 from app.models.claim import Claim
+from app.models.policy import Policy
 from app.schemas.claim import ClaimCreate, ClaimListResponse, ClaimResponse, ClaimUpdate
 from app.services.audit_service import log_action
+
+
+async def _resolve_policy(db: AsyncSession, user_id: uuid.UUID, claim_type: str) -> Policy:
+    """
+    Find the most-recently-created ACTIVE policy belonging to *user_id* whose
+    policy_type matches *claim_type*.  Raises NotFoundError when none is found.
+    """
+    today = date.today()
+    result = await db.execute(
+        select(Policy)
+        .where(
+            Policy.user_id == user_id,
+            Policy.policy_type == claim_type,
+            Policy.status == "ACTIVE",
+            Policy.start_date <= today,
+            Policy.end_date >= today,
+        )
+        .order_by(Policy.created_at.desc())
+        .limit(1)
+    )
+    policy = result.scalar_one_or_none()
+    if not policy:
+        raise BusinessRuleError(
+            f"No active {claim_type} policy found for this account. "
+            "Please contact your insurer or check your policy details."
+        )
+    return policy
 
 
 async def create_claim(payload: ClaimCreate, user_id: str, role: str, db: AsyncSession) -> Claim:
     # PROVIDER users cannot file claims
     if role == "PROVIDER":
         raise PermissionDeniedError("Providers cannot file claims. Use the provider dashboard to view claims.")
-    
+
+    uid = uuid.UUID(user_id)
+
+    # ── 1. Resolve policy from DB — no manual policy_number accepted ──────────
+    policy = await _resolve_policy(db, uid, payload.claim_type)
+
     provider_id = None
     if payload.provider_id:
         provider_id = uuid.UUID(payload.provider_id)
-    
+
+    # ── 2. Snapshot policy details for audit / fraud analysis ─────────────────
+    policy_snapshot: dict = {
+        "policy_id": str(policy.id),
+        "policy_number": policy.policy_number,
+        "policy_type": policy.policy_type,
+        "sum_insured": float(policy.sum_insured),
+        "premium_amount": float(policy.premium_amount),
+        "start_date": policy.start_date.isoformat(),
+        "end_date": policy.end_date.isoformat(),
+        "insured_name": policy.insured_name,
+        "insured_dob": policy.insured_dob.isoformat() if policy.insured_dob else None,
+        "nominee_name": policy.nominee_name,
+        **(policy.meta_data or {}),
+    }
+
+    # ── 3. Basic business rule: claim amount ≤ sum insured ───────────────────
+    if payload.claim_amount > float(policy.sum_insured):
+        raise BusinessRuleError(
+            f"Claim amount ₹{payload.claim_amount:,.2f} exceeds the policy's "
+            f"sum insured ₹{float(policy.sum_insured):,.2f}."
+        )
+
+    claim_id_new = uuid.uuid4()
+    short = str(claim_id_new).split("-")[0].upper()
+    claim_number = f"CLM-{payload.claim_type[:3]}-{short}"
+
     claim = Claim(
-        id=uuid.uuid4(),
-        user_id=uuid.UUID(user_id),
+        id=claim_id_new,
+        user_id=uid,
         provider_id=provider_id,
-        policy_number=payload.policy_number,
+        policy_id=policy.id,
+        claim_number=claim_number,
+        policy_number=policy.policy_number,  # denormalised for quick display
         claim_type=payload.claim_type,
         claim_amount=payload.claim_amount,
         description=payload.description,
         status=ClaimStatus.SUBMITTED,
+        verified_data={"policy_snapshot": policy_snapshot},
     )
     db.add(claim)
     await log_action(
@@ -40,7 +103,13 @@ async def create_claim(payload: ClaimCreate, user_id: str, role: str, db: AsyncS
         entity_type="CLAIM",
         actor_id=user_id,
         entity_id=str(claim.id),
-        metadata={"amount": payload.claim_amount, "type": payload.claim_type, "provider_id": str(provider_id) if provider_id else None},
+        metadata={
+            "amount": payload.claim_amount,
+            "type": payload.claim_type,
+            "policy_number": policy.policy_number,
+            "policy_id": str(policy.id),
+            "provider_id": str(provider_id) if provider_id else None,
+        },
     )
     await db.commit()
     await db.refresh(claim)
@@ -149,7 +218,7 @@ async def verify_claim_data(claim_id: str, user_id: str, db: AsyncSession) -> di
     Run a 'Verification Agent' (Gemini) to cross-check the claim against uploaded documents.
     Returns a structured verification report with discrepancies and a confidence score.
     """
-    from app.models.document import Document
+    from app.models.claim_document import ClaimDocument
     from app.config import settings
     from langchain_google_genai import ChatGoogleGenerativeAI
     from langchain_core.prompts import PromptTemplate
@@ -158,7 +227,7 @@ async def verify_claim_data(claim_id: str, user_id: str, db: AsyncSession) -> di
     # Fetch claim (using internal role to bypass if needed, but safe here)
     claim = await get_claim(claim_id, user_id, "ADJUSTER", db)
     
-    result = await db.execute(select(Document).where(Document.claim_id == claim.id))
+    result = await db.execute(select(ClaimDocument).where(ClaimDocument.claim_id == claim.id))
     documents = result.scalars().all()
     
     if not documents:
@@ -167,7 +236,7 @@ async def verify_claim_data(claim_id: str, user_id: str, db: AsyncSession) -> di
     # Prepare context for Gemini
     doc_context = []
     for d in documents:
-        doc_context.append(f"Document ({d.document_type}): {d.extracted_data}")
+        doc_context.append(f"Document ({d.document_type_code}): {d.extracted_data}")
     
     doc_text = "\n\n".join(doc_context)
     
@@ -209,10 +278,14 @@ async def verify_claim_data(claim_id: str, user_id: str, db: AsyncSession) -> di
         content = response.content.replace("```json", "").replace("```", "").strip()
         verification_result = json.loads(content)
         
-        # Persist to JSONB column (requires migration)
-        # claim.verified_data = verification_result
-        # await db.commit()
-        # await db.refresh(claim)
+        # Merge OCR verification result into verified_data (preserves policy_snapshot)
+        existing_vd = claim.verified_data or {}
+        existing_vd["ocr_verification"] = verification_result
+        # Use attribute assignment to trigger SQLAlchemy JSONB change detection
+        from copy import deepcopy
+        claim.verified_data = deepcopy(existing_vd)
+        await db.commit()
+        await db.refresh(claim)
 
         
         return verification_result

@@ -9,7 +9,8 @@ from pydantic import BaseModel, field_validator
 
 
 class ClaimCreate(BaseModel):
-    policy_number: str
+    # policy_number is NOT accepted from the client — it is looked up from the
+    # policies table using the authenticated user's ID + claim_type.
     claim_type: str
     claim_amount: float
     description: Optional[str] = None
@@ -62,6 +63,7 @@ class ClaimResponse(BaseModel):
 
     id: uuid.UUID
     user_id: uuid.UUID
+    policy_id: Optional[uuid.UUID]
     policy_number: str
     claim_type: str
     claim_amount: float
@@ -69,6 +71,7 @@ class ClaimResponse(BaseModel):
     status: str
     fraud_score: Optional[float]
     adjuster_notes: Optional[str]
+    verified_data: Optional[dict]
     created_at: datetime
     updated_at: datetime
 

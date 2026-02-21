@@ -75,10 +75,10 @@ async def get_claimant_history(claim_id: str, *, db, adjuster_id: str) -> dict[s
 async def get_document_extractions(claim_id: str, *, db, adjuster_id: str) -> dict[str, Any]:
     """Fetch all documents uploaded for the claim with their Gemini-extracted data."""
     from sqlalchemy import select
-    from app.models.document import Document
+    from app.models.claim_document import ClaimDocument
     try:
         result = await db.execute(
-            select(Document).where(Document.claim_id == uuid.UUID(claim_id))
+            select(ClaimDocument).where(ClaimDocument.claim_id == uuid.UUID(claim_id))
         )
         docs = result.scalars().all()
         return {
@@ -86,7 +86,7 @@ async def get_document_extractions(claim_id: str, *, db, adjuster_id: str) -> di
             "documents": [
                 {
                     "id":              str(d.id),
-                    "type":            d.document_type,
+                    "type":            d.document_type_code,
                     "filename":        d.original_filename,
                     "extracted_data":  d.extracted_data,
                     "confidence":      float(d.extraction_confidence) if d.extraction_confidence else None,
@@ -170,16 +170,65 @@ async def generate_report(claim_id: str, *, db, adjuster_id: str) -> dict[str, A
             max_output_tokens=5000,
         )
 
-        prompt = f"""You are a senior insurance claims adjuster AI. Write a concise claim processing report in PLAIN TEXT only.
+        prompt = f"""You are a senior insurance claims adjuster AI. Write a comprehensive claim processing report in STRICT PLAIN TEXT following the exact format below.
 
-IMPORTANT FORMATTING RULES:
-- Do NOT use any Markdown formatting (no #, *, **, ```, ---, etc.)
-- Use plain text headings in ALL CAPS followed by a blank line
-- Use simple dashes (-) for bullet points
-- Use plain text for emphasis (e.g. write APPROVE not **APPROVE**)
-- Keep the entire report under 3000 words
+════════════════════════════════════════
+FORMAT SPECIFICATION (MUST FOLLOW EXACTLY)
+════════════════════════════════════════
 
-=== INPUT DATA ===
+RULES:
+- Do NOT use any Markdown (no #, *, **, `, ---, _underline_, etc.)
+- Each section MUST begin with its exact ALL-CAPS heading on its own line, with NO leading spaces or dashes
+- After the heading, leave ONE blank line, then write the section content
+- Leave ONE blank line between sections
+- Bullet points use "- " prefix (dash + space)
+- BE CONCISE: max 2 sentences per paragraph, max 6 bullets per section, no filler
+- Total report must be under 800 words
+
+SECTION 1 HEADING:  CLAIMANT SUMMARY
+  Content: 2-4 paragraph sentences describing the claimant, their policy details (number, type, sum insured, validity), and any notable history patterns.
+
+SECTION 2 HEADING:  CLAIM DETAILS
+  Content: ONLY key-value bullet pairs in this exact format:
+    - Claim ID: <value>
+    - Status: <value>
+    - Claim Type: <value>
+    - Policy Number: <value>
+    - Claimed Amount: <value>
+    - Description: <value>
+    - Created At: <value>
+
+SECTION 3 HEADING:  DOCUMENT ANALYSIS
+  Content: For each document, write a bullet for the document header, then sub-bullets for extracted fields:
+    - DOCUMENT_TYPE (original_filename.ext)
+      - Extracted Patient Name: <value>
+      - Extracted Diagnosis / Amount / Date / etc.: <value>
+      - <any other extracted field>: <value>
+      - Assessment: one sentence on whether this document supports the claim
+
+SECTION 4 HEADING:  DISCREPANCIES FOUND
+  Content: Bullet list of each mismatch found:
+    - <Discrepancy category>: <description of the mismatch>
+
+SECTION 5 HEADING:  FRAUD ASSESSMENT BREAKDOWN
+  Content: Bullet list of fraud signals in plain English:
+    - <Signal name>: <plain English explanation of why this raises concern>
+
+SECTION 6 HEADING:  AI RECOMMENDATION
+  Content: FIRST LINE must be ONE of these exact words only (no punctuation, no extra text on that line):
+    APPROVE
+    REJECT
+    MANUAL REVIEW
+  Then on the following lines, write 2-3 sentences explaining the reasoning.
+
+SECTION 7 HEADING:  ACTION ITEMS
+  Content: Numbered action bullets (use "-" prefix, NOT numbers):
+    - <Specific actionable step for the adjuster>
+    - <Specific actionable step>
+
+════════════════════════════════════════
+INPUT DATA
+════════════════════════════════════════
 
 CLAIM:
 {claim}
@@ -198,18 +247,7 @@ Signals: deterministic={fraud.get('deterministic_signals', [])}, behavioral={fra
 VERIFICATION REPORT:
 {verification}
 
-=== REPORT SECTIONS ===
-
-Write the report with these exact sections:
-1. CLAIMANT SUMMARY - Who they are, policy, history pattern
-2. CLAIM DETAILS - What they are claiming and why
-3. DOCUMENT ANALYSIS - What the AI extracted, any gaps or issues
-4. DISCREPANCIES FOUND - Mismatches between claim and documents
-5. FRAUD ASSESSMENT BREAKDOWN - Per-signal explanation in plain English
-6. AI RECOMMENDATION - One of: APPROVE / FLAG_FOR_REVIEW / REJECT with reason
-7. ACTION ITEMS - Specific steps the adjuster should take
-
-Be concise, factual, and professional. No Markdown."""
+Now write the report following the format specification above exactly. Start directly with the first section heading CLAIMANT SUMMARY."""
 
         response = await llm.ainvoke(prompt)
         content = response.content

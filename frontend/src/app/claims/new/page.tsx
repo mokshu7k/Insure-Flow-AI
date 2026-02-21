@@ -6,50 +6,53 @@ import { CommandLayout } from "@/components/layout/CommandLayout";
 import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
 import { complianceService } from "@/services/complianceService";
+import { policyService } from "@/services/policyService";
 import api from "@/services/api";
 import { EditableExtractedData } from "@/components/ui/EditableExtractedData";
-import type { ClaimType, DocumentResponse, DocumentType } from "@/types";
+import type { ClaimDocumentResponse, ClaimType, DocumentRequirement, DocumentType, Policy } from "@/types";
 import {
     Heart, Car, ReceiptText, Upload, X, CheckCircle2,
     ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader, AlertTriangle,
-    Shield, AlertCircle,
+    Shield, AlertCircle, Building2,
 } from "lucide-react";
 
-// ── Document config per claim type ────────────────────────────────────────────
+// ── Document spec (one upload slot) ──────────────────────────────────────────
 interface DocSpec {
     type: DocumentType;
     label: string;
     required: boolean;
     hint: string;
+    requirement_id?: string;      // NEW — links to DocumentRequirement row
+    document_type_code?: string;  // NEW — for template-aware upload
 }
 
 const DOC_CONFIG: Record<ClaimType, DocSpec[]> = {
     HEALTH: [
         { type: "DISCHARGE_SUMMARY", label: "Discharge Summary", required: true, hint: "Hospital discharge letter" },
-        { type: "INVOICE", label: "Policy Document", required: true, hint: "Insurance policy PDF" },
-        { type: "OTHER", label: "ID Proof", required: true, hint: "Aadhaar / PAN / Passport" },
-        { type: "MEDICAL_REPORT", label: "Medical Report", required: false, hint: "Diagnostic reports" },
-        { type: "PRESCRIPTION", label: "Prescription", required: false, hint: "Doctor prescriptions" },
+        { type: "HOSPITAL_BILL",      label: "Hospital Bill",      required: true, hint: "Itemized hospital bill" },
+        { type: "AADHAAR",            label: "ID Proof (Aadhaar)", required: true, hint: "Aadhaar card" },
+        { type: "LAB_REPORT",         label: "Lab / Medical Report", required: false, hint: "Diagnostic reports" },
+        { type: "PRESCRIPTION",       label: "Prescription",       required: false, hint: "Doctor prescriptions" },
     ],
     MOTOR: [
-        { type: "OTHER", label: "Policy Document", required: true, hint: "Vehicle insurance policy" },
-        { type: "VEHICLE_RC", label: "Vehicle RC", required: true, hint: "Registration certificate" },
-        { type: "OTHER", label: "Driving Licence", required: true, hint: "Valid driving licence" },
-        { type: "POLICE_REPORT", label: "FIR / Police Report", required: false, hint: "If applicable" },
-        { type: "ESTIMATE", label: "Repair Estimate", required: false, hint: "Workshop estimate" },
+        { type: "OTHER",     label: "Policy Document",    required: true,  hint: "Vehicle insurance policy" },
+        { type: "OTHER",     label: "Vehicle RC",         required: true,  hint: "Registration certificate" },
+        { type: "OTHER",     label: "Driving Licence",    required: true,  hint: "Valid driving licence" },
+        { type: "FIR_REPORT", label: "FIR / Police Report", required: false, hint: "If applicable" },
+        { type: "OTHER",     label: "Repair Estimate",    required: false, hint: "Workshop estimate" },
     ],
     REIMBURSEMENT: [
-        { type: "INVOICE", label: "Original Bills", required: true, hint: "Hospital / pharmacy bills" },
-        { type: "INVOICE", label: "Policy Document", required: true, hint: "Insurance policy PDF" },
-        { type: "OTHER", label: "ID Proof", required: true, hint: "Aadhaar / PAN / Passport" },
-        { type: "PRESCRIPTION", label: "Prescription", required: false, hint: "Doctor prescription" },
-        { type: "OTHER", label: "Payment Receipts", required: false, hint: "Proof of payment" },
+        { type: "HOSPITAL_BILL",  label: "Original Bills",    required: true,  hint: "Hospital / pharmacy bills" },
+        { type: "CLAIM_FORM",     label: "Signed Claim Form", required: true,  hint: "Insurance claim form" },
+        { type: "AADHAAR",        label: "ID Proof",          required: true,  hint: "Aadhaar / PAN" },
+        { type: "PRESCRIPTION",   label: "Prescription",      required: false, hint: "Doctor prescription" },
+        { type: "OTHER",          label: "Payment Receipts",  required: false, hint: "Proof of payment" },
     ],
 };
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 function StepBar({ current }: { current: number }) {
-    const steps = ["Consent", "Type", "Documents", "Review", "Confirm"];
+    const steps = ["Consent", "Policy", "Documents", "Review", "Confirm"];
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 28 }}>
             {steps.map((label, i) => {
@@ -194,11 +197,33 @@ function WizardContent() {
 
     // Removed: Auto-skip consent. Now shown every time user files a claim.
 
-    // Step 2
-    const [claimType, setClaimType] = useState<ClaimType | null>(null);
+    // Policies loaded from DB
+    const [myPolicies, setMyPolicies] = useState<Policy[]>([]);
+    useEffect(() => {
+        policyService.listMine().then((r) => setMyPolicies(r.items)).catch(() => {});
+    }, []);
+
+    // Step 2 — policy selection (replaces type picker)
+    const [selectedPolicy, setSelectedPolicy] = useState<Policy | null>(null);
+    const [docRequirements, setDocRequirements] = useState<DocumentRequirement[]>([]);
+    const [reqLoading, setReqLoading] = useState(false);
+
+    // claimType is DERIVED from the selected policy (no longer separately chosen)
+    const claimType: ClaimType | null = selectedPolicy
+        ? (selectedPolicy.policy_type as ClaimType)
+        : null;
+
+    // When a policy is selected, fetch its document requirements
+    useEffect(() => {
+        if (!selectedPolicy) { setDocRequirements([]); return; }
+        setReqLoading(true);
+        policyService.getDocumentRequirements(selectedPolicy.id)
+            .then((r) => setDocRequirements(r.items))
+            .catch(() => setDocRequirements([]))
+            .finally(() => setReqLoading(false));
+    }, [selectedPolicy?.id]);
 
     // Step 2
-    const [policyNumber, setPolicyNumber] = useState("");
     const [files, setFiles] = useState<Map<number, File>>(new Map()); // keyed by docSpec index
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
@@ -254,7 +279,8 @@ function WizardContent() {
         setIsRecording(false);
     };
     const [claimId, setClaimId] = useState<string | null>(null);
-    const [uploadedDocs, setUploadedDocs] = useState<DocumentResponse[]>([]);
+    const [resolvedPolicyNumber, setResolvedPolicyNumber] = useState<string | null>(null);
+    const [uploadedDocs, setUploadedDocs] = useState<ClaimDocumentResponse[]>([]);
     const [extracting, setExtracting] = useState(false); // true while background tasks are pending
 
     // ── Polling for background Gemini extraction on the wizard ────────────────
@@ -267,7 +293,10 @@ function WizardContent() {
     useEffect(() => {
         // Start polling when we hit step 4 and any doc is still pending
         if (step !== 4 || !claimId) return;
-        const hasPending = uploadedDocs.some((d) => d.validation_status === "pending");
+        const isPending = (d: ClaimDocumentResponse) =>
+            (d.ocr_status ?? "").toUpperCase() === "PENDING" ||
+            (d.validation_status ?? "").toUpperCase() === "PENDING";
+        const hasPending = uploadedDocs.some(isPending);
         if (!hasPending) { setExtracting(false); return; }
 
         setExtracting(true);
@@ -275,9 +304,9 @@ function WizardContent() {
 
         wizardPollRef.current = setInterval(async () => {
             try {
-                const refreshed = await documentService.listForClaim(claimId);
+                const refreshed = await documentService.listClaimDocs(claimId);
                 setUploadedDocs(refreshed);
-                const stillPending = refreshed.some((d) => d.validation_status === "pending");
+                const stillPending = refreshed.some(isPending);
                 if (!stillPending) {
                     setExtracting(false);
                     stopWizardPoll();
@@ -299,18 +328,29 @@ function WizardContent() {
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
 
-    const specs = claimType ? DOC_CONFIG[claimType] : [];
+    // Specs: prefer API-driven requirements; fall back to static DOC_CONFIG
+    const specs: DocSpec[] = docRequirements.length > 0
+        ? docRequirements.map((req) => ({
+            type: req.document_type_code as DocumentType,
+            label: req.display_name,
+            required: req.is_compulsory,
+            hint: req.instructions ?? (req.field_keys.length > 0 ? `Fields: ${req.field_keys.slice(0, 3).join(", ")}` : req.display_name),
+            requirement_id: req.id,
+            document_type_code: req.document_type_code,
+          }))
+        : (claimType && DOC_CONFIG[claimType as keyof typeof DOC_CONFIG] ? DOC_CONFIG[claimType as keyof typeof DOC_CONFIG] : []);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-    function getExtractedAmount(docs: DocumentResponse[]): string {
+    function getExtractedAmount(docs: ClaimDocumentResponse[]): string {
         for (const doc of docs) {
+            // Try promoted column first
+            if (doc.total_amount && doc.total_amount > 0) return String(doc.total_amount);
             if (!doc.extracted_data) continue;
             const d = doc.extracted_data as Record<string, unknown>;
             const candidates = ["total_amount", "claim_amount", "amount", "net_amount", "bill_amount"];
             for (const key of candidates) {
                 if (d[key] !== undefined && d[key] !== null) {
                     const raw = d[key];
-                    // field may be {text: "42500", value: 42500} or a plain scalar
                     const textVal =
                         typeof raw === "object" && raw !== null
                             ? (raw as Record<string, unknown>).value ?? (raw as Record<string, unknown>).text
@@ -347,29 +387,31 @@ function WizardContent() {
             setUploadError(`Please upload: ${missingRequired.map(({ spec }) => spec.label).join(", ")}`);
             return;
         }
-        if (!policyNumber.trim()) {
-            setUploadError("Policy number is required");
-            return;
-        }
         setUploadError(null);
         setDocErrors(new Map());
         setUploading(true);
         try {
-            // Create placeholder claim
+            // Create placeholder claim — policy is resolved server-side by claim_type
             const claim = await claimService.create({
-                policy_number: policyNumber.trim(),
                 claim_type: claimType,
                 claim_amount: 1.0,
             });
             setClaimId(claim.id);
+            setResolvedPolicyNumber(claim.policy_number);
 
             // Upload documents — collect per-doc validation errors separately
-            const results: DocumentResponse[] = [];
+            const results: ClaimDocumentResponse[] = [];
             const newDocErrors = new Map<number, string>();
             for (const [idx, file] of files.entries()) {
                 const spec = specs[idx];
                 try {
-                    const doc = await documentService.upload(claim.id, file, spec.type);
+                    // Use template-aware ClaimDocument upload
+                    const doc = await documentService.uploadClaimDoc(
+                        claim.id,
+                        file,
+                        spec.document_type_code ?? spec.type,
+                        spec.requirement_id,
+                    );
                     results.push(doc);
                 } catch (err) {
                     // Extract the backend detail for 400 validation errors
@@ -398,7 +440,8 @@ function WizardContent() {
 
             setStep(4);
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : "Upload failed";
+            const axErr = err as { response?: { data?: { detail?: string } } };
+            const msg = axErr.response?.data?.detail ?? (err instanceof Error ? err.message : "Upload failed");
             setUploadError(msg);
         } finally {
             setUploading(false);
@@ -549,45 +592,130 @@ function WizardContent() {
                     </div>
                 )}
 
-                {/* ── Step 2: Choose type ─────────────────────────────────── */}
+                {/* ── Step 2: Select policy ────────────────────────────────── */}
                 {step === 2 && (
                     <div>
-                        <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>What type of claim?</h2>
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
-                            Choose the category that best describes your claim.
-                        </p>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
-                            {(["HEALTH", "MOTOR", "REIMBURSEMENT"] as ClaimType[]).map((t) => {
-                                const meta = TYPE_META[t];
-                                const selected = claimType === t;
-                                return (
-                                    <button
-                                        key={t}
-                                        onClick={() => setClaimType(t)}
-                                        style={{
-                                            border: `1px solid ${selected ? meta.color : "var(--border)"}`,
-                                            borderRadius: 8,
-                                            padding: "18px 14px",
-                                            background: selected ? `${meta.color}18` : "var(--bg-surface)",
-                                            cursor: "pointer",
-                                            textAlign: "left",
-                                            transition: "all 150ms",
-                                        }}
-                                    >
-                                        <div style={{ color: meta.color, marginBottom: 8 }}>{meta.icon}</div>
-                                        <div style={{ fontWeight: 600, fontSize: "0.875rem", marginBottom: 4 }}>{meta.title}</div>
-                                        <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", lineHeight: 1.4 }}>{meta.desc}</div>
-                                    </button>
-                                );
-                            })}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                            <Building2 size={18} color="var(--blue)" />
+                            <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Choose a policy to claim</h2>
                         </div>
+                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
+                            Select the policy you&apos;d like to file a claim against. Required documents will be shown automatically.
+                        </p>
+
+                        {myPolicies.length === 0 ? (
+                            <div style={{
+                                border: "1px solid var(--border)", borderRadius: 8, padding: "24px",
+                                textAlign: "center", color: "var(--text-muted)", fontSize: "0.875rem",
+                                background: "var(--bg-surface)",
+                            }}>
+                                No policies found. Please contact your insurer.
+                            </div>
+                        ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+                                {myPolicies.filter(p => p.status === "ACTIVE").map((pol) => {
+                                    const selected = selectedPolicy?.id === pol.id;
+                                    const typeColor = pol.policy_type === "HEALTH" ? "var(--green)"
+                                        : pol.policy_type === "MOTOR" ? "var(--blue)"
+                                        : "var(--amber)";
+                                    return (
+                                        <button
+                                            key={pol.id}
+                                            onClick={() => setSelectedPolicy(selected ? null : pol)}
+                                            style={{
+                                                border: `1px solid ${selected ? typeColor : "var(--border)"}`,
+                                                borderRadius: 8,
+                                                padding: "14px 16px",
+                                                background: selected ? `${typeColor}12` : "var(--bg-surface)",
+                                                cursor: "pointer",
+                                                textAlign: "left",
+                                                transition: "all 150ms",
+                                                width: "100%",
+                                            }}
+                                        >
+                                            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+                                                    {selected && <CheckCircle2 size={15} color={typeColor} style={{ flexShrink: 0 }} />}
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ fontWeight: 600, fontSize: "0.875rem", display: "flex", alignItems: "center", gap: 8 }}>
+                                                            {pol.policy_number}
+                                                            <span style={{
+                                                                fontSize: "0.625rem", fontWeight: 600, padding: "2px 7px",
+                                                                borderRadius: 99, background: `${typeColor}22`, color: typeColor,
+                                                            }}>
+                                                                {pol.policy_type}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 2 }}>
+                                                            {pol.insured_name ?? "—"} · Sum insured: ₹{Number(pol.sum_insured).toLocaleString("en-IN")}
+                                                        </div>
+                                                        <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: 1 }}>
+                                                            Valid: {pol.start_date} → {pol.end_date}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Requirement loading */}
+                        {reqLoading && selectedPolicy && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 12 }}>
+                                <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                                Loading document requirements…
+                            </div>
+                        )}
+
+                        {/* Show required docs preview when policy selected */}
+                        {selectedPolicy && !reqLoading && docRequirements.length > 0 && (
+                            <div style={{
+                                border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px",
+                                background: "var(--bg-surface)", marginBottom: 16,
+                            }}>
+                                <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 8, color: "var(--text-muted)" }}>
+                                    Required documents ({docRequirements.filter(r => r.is_compulsory).length} mandatory)
+                                </div>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                                    {docRequirements.map((req) => (
+                                        <div key={req.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.75rem" }}>
+                                            <span style={{
+                                                width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                                                background: req.is_compulsory ? "var(--red, #ef4444)" : "var(--text-muted)",
+                                            }} />
+                                            <span style={{ color: req.is_compulsory ? "var(--text-primary)" : "var(--text-muted)" }}>
+                                                {req.display_name}
+                                                {req.is_compulsory && <span style={{ color: "var(--red, #ef4444)", marginLeft: 3 }}>*</span>}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {selectedPolicy && !reqLoading && docRequirements.length === 0 && (
+                            <div style={{
+                                border: "1px solid rgba(245,158,11,0.35)", borderRadius: 6, padding: "10px 12px",
+                                background: "rgba(245,158,11,0.06)", fontSize: "0.75rem", color: "#f59e0b",
+                                marginBottom: 14,
+                            }}>
+                                No template-driven requirements found for this policy type. You&apos;ll be able to upload any relevant documents in the next step.
+                            </div>
+                        )}
+
                         <button
                             className="btn btn-primary"
-                            disabled={!claimType}
+                            disabled={!selectedPolicy || reqLoading}
                             onClick={() => setStep(3)}
                             style={{ width: "100%" }}
                         >
-                            Continue <ChevronRight size={14} />
+                            {reqLoading ? (
+                                <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Loading requirements…</>
+                            ) : (
+                                <>Continue to Documents <ChevronRight size={14} /></>
+                            )}
                         </button>
                     </div>
                 )}
@@ -596,25 +724,11 @@ function WizardContent() {
                 {step === 3 && claimType && (
                     <div>
                         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>
-                            {TYPE_META[claimType].title} Claim — Documents
+                            {(claimType && TYPE_META[claimType as keyof typeof TYPE_META]?.title) ?? claimType ?? "Claim"} — Documents
                         </h2>
                         <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
                             Upload supporting documents. Required fields are marked with *.
                         </p>
-
-                        {/* Policy number */}
-                        <div style={{ marginBottom: 16 }}>
-                            <label style={{ fontSize: "0.75rem", fontWeight: 500, display: "block", marginBottom: 4 }}>
-                                Policy Number <span style={{ color: "var(--red, #ef4444)" }}>*</span>
-                            </label>
-                            <input
-                                className="input"
-                                value={policyNumber}
-                                onChange={(e) => setPolicyNumber(e.target.value)}
-                                placeholder="e.g. POL-2024-001"
-                                style={{ width: "100%", boxSizing: "border-box" }}
-                            />
-                        </div>
 
                         {/* File upload areas */}
                         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
@@ -689,43 +803,90 @@ function WizardContent() {
                         {/* OCR extractions */}
                         {uploadedDocs.length > 0 && (
                             <div style={{ marginBottom: 20 }}>
-                                {uploadedDocs.map((doc) => (
-                                    <div key={doc.id} style={{
-                                        border: "1px solid var(--border)", borderRadius: 6,
-                                        padding: "10px 14px", marginBottom: 8, background: "var(--bg-surface)",
-                                    }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                                            <FileText size={13} color="var(--text-muted)" />
-                                            <span style={{ fontSize: "0.75rem", fontWeight: 500 }}>{doc.original_filename ?? doc.document_type}</span>
-                                            {doc.validation_status === "pending" ? (
-                                                <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.625rem", color: "var(--blue)", fontFamily: "var(--font-mono)" }}>
-                                                    <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> extracting…
-                                                </span>
-                                            ) : doc.extraction_confidence !== null ? (
-                                                <span style={{
-                                                    marginLeft: "auto", fontSize: "0.625rem",
-                                                    color: (doc.extraction_confidence ?? 0) >= 0.7 ? "var(--green)" : "var(--amber)",
-                                                    fontFamily: "var(--font-mono)",
-                                                }}>
-                                                    {Math.round((doc.extraction_confidence ?? 0) * 100)}% confidence
-                                                </span>
-                                            ) : null}
-                                        </div>
-                                        {doc.validation_status === "pending" ? (
-                                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                                {[80, 60, 70].map((w, i) => (
-                                                    <div key={i} className="skeleton" style={{ height: 10, width: `${w}%` }} />
-                                                ))}
+                                {uploadedDocs.map((doc) => {
+                                    const isPending = (doc.ocr_status ?? "").toUpperCase() === "PENDING"
+                                        || (doc.validation_status ?? "").toUpperCase() === "PENDING";
+                                    const isRejected = ["REJECTED", "FLAGGED", "NEEDS_RESUBMISSION"].includes(
+                                        (doc.validation_status ?? "").toUpperCase()
+                                    );
+                                    return (
+                                        <div key={doc.id} style={{
+                                            border: `1px solid ${isRejected ? "rgba(245,158,11,0.45)" : "var(--border)"}`,
+                                            borderRadius: 6,
+                                            padding: "10px 14px", marginBottom: 8,
+                                            background: isRejected ? "rgba(245,158,11,0.04)" : "var(--bg-surface)",
+                                        }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                                                <FileText size={13} color="var(--text-muted)" />
+                                                <span style={{ fontSize: "0.75rem", fontWeight: 500 }}>{doc.original_filename ?? doc.document_type}</span>
+                                                {isPending ? (
+                                                    <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.625rem", color: "var(--blue)", fontFamily: "var(--font-mono)" }}>
+                                                        <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> extracting…
+                                                    </span>
+                                                ) : doc.extraction_confidence !== null ? (
+                                                    <span style={{
+                                                        marginLeft: "auto", fontSize: "0.625rem",
+                                                        color: (doc.extraction_confidence ?? 0) >= 0.7 ? "var(--green)" : "var(--amber)",
+                                                        fontFamily: "var(--font-mono)",
+                                                    }}>
+                                                        {Math.round((doc.extraction_confidence ?? 0) * 100)}% confidence
+                                                    </span>
+                                                ) : null}
                                             </div>
-                                        ) : (
-                                            <EditableExtractedData
-                                                document={doc}
-                                                onUpdate={(updated) => setUploadedDocs((prev) => prev.map((d) => d.id === updated.id ? updated : d))}
-                                                onError={() => {}}
-                                            />
-                                        )}
-                                    </div>
-                                ))}
+
+                                            {isPending ? (
+                                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                                    {[80, 60, 70].map((w, i) => (
+                                                        <div key={i} className="skeleton" style={{ height: 10, width: `${w}%` }} />
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    {/* Discrepancy / validation warnings */}
+                                                    {isRejected && doc.validation_reason && (
+                                                        <div style={{
+                                                            display: "flex", gap: 8, alignItems: "flex-start",
+                                                            padding: "8px 10px", marginBottom: 8,
+                                                            background: "rgba(245,158,11,0.08)",
+                                                            border: "1px solid rgba(245,158,11,0.3)",
+                                                            borderRadius: 6,
+                                                        }}>
+                                                            <AlertTriangle size={12} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
+                                                            <div style={{ fontSize: "0.6875rem", lineHeight: 1.5 }}>
+                                                                <span style={{ fontWeight: 600, color: "#f59e0b" }}>{doc.validation_status}: </span>
+                                                                <span style={{ color: "var(--text-primary)" }}>{doc.validation_reason}</span>
+                                                                {doc.missing_fields && doc.missing_fields.length > 0 && (
+                                                                    <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
+                                                                        Missing fields: {doc.missing_fields.join(", ")}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {/* Promoted summary row */}
+                                                    {(doc.patient_name || doc.hospital_name || doc.total_amount) && (
+                                                        <div style={{
+                                                            display: "flex", gap: 12, flexWrap: "wrap",
+                                                            padding: "6px 0", marginBottom: 6,
+                                                            borderBottom: "1px solid var(--border)",
+                                                            fontSize: "0.6875rem",
+                                                        }}>
+                                                            {doc.patient_name && <span><span style={{ color: "var(--text-muted)" }}>Patient: </span>{doc.patient_name}</span>}
+                                                            {doc.hospital_name && <span><span style={{ color: "var(--text-muted)" }}>Hospital: </span>{doc.hospital_name}</span>}
+                                                            {doc.total_amount && <span style={{ fontWeight: 600 }}>₹{Number(doc.total_amount).toLocaleString("en-IN")}</span>}
+                                                            {doc.entity_gstin && <span><span style={{ color: "var(--text-muted)" }}>GSTIN: </span>{doc.entity_gstin}</span>}
+                                                        </div>
+                                                    )}
+                                                    <EditableExtractedData
+                                                        document={doc}
+                                                        onUpdate={(updated) => setUploadedDocs((prev) => prev.map((d) => d.id === updated.id ? { ...d, ...updated } as ClaimDocumentResponse : d))}
+                                                        onError={() => {}}
+                                                    />
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
 
@@ -824,8 +985,8 @@ function WizardContent() {
                             overflow: "hidden", marginBottom: 20,
                         }}>
                             {[
-                                { label: "Claim type", value: TYPE_META[claimType].title },
-                                { label: "Policy number", value: policyNumber },
+                                { label: "Claim type", value: (claimType && TYPE_META[claimType as keyof typeof TYPE_META]?.title) ?? claimType ?? "—" },
+                                { label: "Policy", value: selectedPolicy ? `${selectedPolicy.policy_number}${selectedPolicy.insured_name ? ` — ${selectedPolicy.insured_name}` : ""}` : resolvedPolicyNumber ?? "Auto-resolved" },
                                 { label: "Claim amount", value: `₹${Number(claimAmount).toLocaleString("en-IN")}` },
                                 { label: "Documents", value: `${uploadedDocs.length} uploaded` },
                                 { label: "Description", value: description || "—" },

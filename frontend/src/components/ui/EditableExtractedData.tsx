@@ -2,11 +2,11 @@
 import { useState, useEffect } from "react";
 import { Edit2, Save, X, Plus, Trash2 } from "lucide-react";
 import { documentService } from "@/services/documentService";
-import type { DocumentResponse } from "@/types";
+import type { ClaimDocumentResponse } from "@/types";
 
 interface EditableExtractedDataProps {
-  document: DocumentResponse;
-  onUpdate: (doc: DocumentResponse) => void;
+  document: ClaimDocumentResponse;
+  onUpdate: (doc: ClaimDocumentResponse) => void;
   onError: (error: string) => void;
 }
 
@@ -41,7 +41,7 @@ export function EditableExtractedData({ document, onUpdate, onError }: EditableE
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const updated = await documentService.updateExtractedData(
+      const updated = await documentService.updateClaimDocData(
         document.id.toString(),
         editedFields
       );

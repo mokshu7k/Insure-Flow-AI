@@ -17,7 +17,7 @@ from app.config import settings
 from app.core.constants import AuditAction, CashlessStatus, ClaimStatus, ClaimType
 from app.core.exceptions import BusinessRuleError, NotFoundError, PermissionDeniedError
 from app.models.claim import Claim
-from app.models.document import Document
+from app.models.claim_document import ClaimDocument
 from app.models.qr_token import QRToken
 from app.services.audit_service import log_action
 
@@ -70,7 +70,7 @@ async def get_network_claims(
     for c in claims:
         # Check if any documents exist for this claim
         doc_result = await db.execute(
-            select(func.count()).select_from(Document).where(Document.claim_id == c.id)
+            select(func.count()).select_from(ClaimDocument).where(ClaimDocument.claim_id == c.id)
         )
         doc_count = doc_result.scalar() or 0
 

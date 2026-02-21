@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.constants import AuditAction
 from app.core.exceptions import BusinessRuleError, NotFoundError, PermissionDeniedError
 from app.models.claim import Claim
-from app.models.document import Document
+from app.models.claim_document import ClaimDocument
 from app.models.fraud import FraudAssessment
 from app.models.user_fraud_profile import UserFraudProfile
 from app.ai_agents.fraud.orchestrator import FraudEngineOrchestrator
@@ -36,7 +36,7 @@ async def run_fraud_analysis(claim_id: str, actor_id: str, role: str, db: AsyncS
 
     # Load first document's extracted data (if any)
     doc_result = await db.execute(
-        select(Document).where(Document.claim_id == uuid.UUID(claim_id)).limit(1)
+        select(ClaimDocument).where(ClaimDocument.claim_id == uuid.UUID(claim_id)).limit(1)
     )
     doc = doc_result.scalar_one_or_none()
 
@@ -47,7 +47,7 @@ async def run_fraud_analysis(claim_id: str, actor_id: str, role: str, db: AsyncS
             "validation_status": doc.validation_status,
             "validation_reason": doc.validation_reason,
             "fraud_signal_weight": float(doc.fraud_signal_weight) if doc.fraud_signal_weight else 0.0,
-            "authenticity_metadata": doc.authenticity_metadata_json or {},
+            "authenticity_metadata": doc.authenticity_metadata or {},
         }
 
     context = {
@@ -57,13 +57,27 @@ async def run_fraud_analysis(claim_id: str, actor_id: str, role: str, db: AsyncS
         "policy_number": claim.policy_number,
         "description": claim.description or "",
         "claim_created_at": str(claim.created_at)[:10] if claim.created_at else None,
+        # Policy details resolved at ingestion time (stored in verified_data)
+        "policy_sum_insured": (
+            (claim.verified_data or {}).get("policy_snapshot", {}).get("sum_insured")
+        ),
+        "policy_start_date": (
+            (claim.verified_data or {}).get("policy_snapshot", {}).get("start_date")
+        ),
+        "policy_end_date": (
+            (claim.verified_data or {}).get("policy_snapshot", {}).get("end_date")
+        ),
+        "claim_to_sum_insured_ratio": (
+            float(claim.claim_amount) / float((claim.verified_data or {}).get("policy_snapshot", {}).get("sum_insured") or float(claim.claim_amount))
+            if (claim.verified_data or {}).get("policy_snapshot", {}).get("sum_insured") else None
+        ),
         # From user profile
         "recent_claims_30d": profile.recent_claims_30d if profile else 0,
         "total_claim_amount_90d": float(profile.total_claim_amount_90d) if profile else 0.0,
         "fraud_flag_count": profile.fraud_flag_count if profile else 0,
         # Document context
         "extracted_data": doc.extracted_data if doc else {},
-        "extracted_text": str(doc.extracted_data or {}),
+        "extracted_text": str(doc.extracted_data or {}) if doc else "{}",
         # Document validation context (from DocumentGatekeeper)
         "document_validation": doc_validation_context,
     }
@@ -130,7 +144,7 @@ async def get_document_validation_context(claim_id: str, db: AsyncSession) -> di
         Dictionary with validation context
     """
     doc_result = await db.execute(
-        select(Document).where(Document.claim_id == uuid.UUID(claim_id)).limit(1)
+        select(ClaimDocument).where(ClaimDocument.claim_id == uuid.UUID(claim_id)).limit(1)
     )
     doc = doc_result.scalar_one_or_none()
     
@@ -145,6 +159,6 @@ async def get_document_validation_context(claim_id: str, db: AsyncSession) -> di
         "validation_status": doc.validation_status,
         "validation_reason": doc.validation_reason,
         "fraud_signal_weight": float(doc.fraud_signal_weight) if doc.fraud_signal_weight else 0.0,
-        "authenticity_verified": doc.validation_status == "accepted",
-        "metadata": doc.authenticity_metadata_json or {},
+        "authenticity_verified": doc.validation_status in ("ACCEPTED", "APPROVED"),
+        "metadata": doc.authenticity_metadata or {},
     }

@@ -12,13 +12,14 @@ import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
 import { adjusterService } from "@/services/adjusterService";
 import { complianceService } from "@/services/complianceService";
-import type { Claim, FraudAssessment, DocumentResponse, AuditLogEntry } from "@/types";
+import type { Claim, FraudAssessment, ClaimDocumentResponse, AuditLogEntry } from "@/types";
 import { canTransitionTo } from "@/types";
 import {
     ArrowLeft, Zap, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
     ChevronDown, ChevronUp, Send, Loader2, RefreshCw, Flag, Clock,
     CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X
 } from "lucide-react";
+import { ClaimReportRenderer } from "@/components/ui/ClaimReportRenderer";
 
 function formatCurrency(n: number | null) {
     if (!n) return "—";
@@ -56,7 +57,7 @@ function LayerScoreRow({ name, score, flags }: { name: string; score: number; fl
             {expanded && flags.length > 0 && (
                 <div style={{ marginTop: 6, paddingLeft: 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
                     {flags.map((f, i) => (
-                        <span key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 3, padding: "2px 6px", color: "var(--text-secondary)" }}>
+                        <span key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "2rem", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 3, padding: "2px 6px", color: "var(--text-secondary)" }}>
                             {f}
                         </span>
                     ))}
@@ -123,7 +124,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const canAction = isAdmin || isAdjuster;
     const [claim, setClaim] = useState<Claim | null>(null);
     const [assessment, setAssessment] = useState<FraudAssessment | null>(null);
-    const [documents, setDocuments] = useState<DocumentResponse[]>([]);
+    const [documents, setDocuments] = useState<ClaimDocumentResponse[]>([]);
     const [loading, setLoading] = useState(true);
     const [fraudLoading, setFraudLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
@@ -144,6 +145,29 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [agentInput, setAgentInput] = useState("");
     const [agentSending, setAgentSending] = useState(false);
     const agentBottomRef = useRef<HTMLDivElement>(null);
+    // Drag-resizable panels
+    const [rightPanelWidth, setRightPanelWidth] = useState(460);
+    const [reportPanelHeight, setReportPanelHeight] = useState(440);
+    const horizDragging = useRef(false);
+    const vertDragging = useRef(false);
+    const horizStart = useRef({ x: 0, w: 460 });
+    const vertStart = useRef({ y: 0, h: 440 });
+    useEffect(() => {
+        const onMove = (e: MouseEvent) => {
+            if (horizDragging.current) {
+                const delta = horizStart.current.x - e.clientX;
+                setRightPanelWidth(Math.max(320, Math.min(800, horizStart.current.w + delta)));
+            }
+            if (vertDragging.current) {
+                const delta = e.clientY - vertStart.current.y;
+                setReportPanelHeight(Math.max(180, Math.min(740, vertStart.current.h + delta)));
+            }
+        };
+        const onUp = () => { horizDragging.current = false; vertDragging.current = false; document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+        return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    }, []);
     // Flag modal
     const [showFlagModal, setShowFlagModal] = useState(false);
     const [flagReason, setFlagReason] = useState("");
@@ -164,15 +188,15 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
         }
     }, []);
 
-    const startPollingIfNeeded = useCallback((docs: DocumentResponse[]) => {
-        const hasPending = docs.some((d) => d.validation_status === "pending");
+    const startPollingIfNeeded = useCallback((docs: ClaimDocumentResponse[]) => {
+        const hasPending = docs.some((d) => (d.ocr_status ?? d.validation_status ?? "").toUpperCase() === "PENDING");
         if (!hasPending) { stopPolling(); return; }
         if (pollTimerRef.current) return; // already running
         pollTimerRef.current = setInterval(async () => {
             try {
-                const refreshed = await documentService.listForClaim(id);
+                const refreshed = await documentService.listClaimDocs(id);
                 setDocuments(refreshed);
-                if (!refreshed.some((d) => d.validation_status === "pending")) stopPolling();
+                if (!refreshed.some((d) => (d.ocr_status ?? d.validation_status ?? "").toUpperCase() === "PENDING")) stopPolling();
             } catch { /* ignore transient poll errors */ }
         }, 3000);
     }, [id, stopPolling]);
@@ -182,7 +206,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
         try {
             const [c, docs] = await Promise.all([
                 claimService.get(id),
-                documentService.listForClaim(id),
+                documentService.listClaimDocs(id),
             ]);
             setClaim(c);
             setDocuments(docs);
@@ -310,7 +334,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
         if (!uploadFile) return;
         setUploading(true);
         try {
-            const doc = await documentService.upload(id, uploadFile, uploadType);
+            const doc = await documentService.uploadClaimDoc(id, uploadFile, uploadType);
             setDocuments((prev) => {
                 const next = [doc, ...prev];
                 startPollingIfNeeded(next);
@@ -381,9 +405,9 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                         {[...Array(6)].map((_, i) => <div key={i} className="skeleton" style={{ height: 14, marginBottom: 12, width: `${70 + (i % 3) * 10}%` }} />)}
                     </div>
                 ) : claim && (
-                    <div style={{ display: "grid", gridTemplateColumns: canAction ? "1fr 340px" : "1fr", gap: 0, height: "100%" }}>
+                    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
                         {/* Left: Claim Details + Documents */}
-                        <div style={{ padding: 20, overflowY: "auto", borderRight: "1px solid var(--border)" }}>
+                        <div style={{ flex: 1, minWidth: 0, padding: 20, overflowY: "auto", borderRight: "1px solid var(--border)" }}>
 
                             {/* Adjuster notes banner — visible to all roles */}
                             {claim.adjuster_notes && (claim.status === "MANUAL_REVIEW_REQUIRED" || claim.status === "REJECTED") && (
@@ -475,7 +499,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                 {doc.original_filename && <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>{doc.original_filename}</div>}
                                             </div>
                                             {doc.requires_manual_review && <AlertTriangle size={13} color="var(--amber)" />}
-                                            {doc.validation_status === "pending" ? (
+                                            {(doc.ocr_status ?? "").toUpperCase() === "PENDING" ? (
                                                 <Loader2 size={12} color="var(--blue)" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
                                             ) : doc.extracted_data && Object.keys(doc.extracted_data).length > 0 ? (
                                                 <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--green)" }}>
@@ -489,12 +513,12 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                         </button>
                                         {expandedDocIds.has(doc.id.toString()) && (
                                             <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
-                                                {doc.validation_status === "pending" ? (
+                                                {(doc.ocr_status ?? "").toUpperCase() === "PENDING" ? (
                                                     <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--blue)", fontSize: "0.75rem" }}>
                                                         <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
                                                         AI extraction in progress — this usually takes 20–40 s…
                                                     </div>
-                                                ) : doc.validation_status === "extraction_failed" ? (
+                                                ) : (doc.validation_status ?? "").toUpperCase() === "EXTRACTION_FAILED" || doc.ocr_status.toUpperCase() === "FAILED" ? (
                                                     <div>
                                                         <div style={{ fontSize: "0.75rem", color: "var(--crimson)", marginBottom: 8 }}>
                                                             Automated extraction failed — add data manually below.
@@ -556,8 +580,17 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
 
                         </div>
 
+                        {/* Horizontal drag handle */}
+                        {canAction && (
+                            <div
+                                onMouseDown={(e) => { horizDragging.current = true; horizStart.current = { x: e.clientX, w: rightPanelWidth }; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
+                                style={{ width: 5, flexShrink: 0, cursor: "col-resize", background: "transparent", transition: "background 150ms" }}
+                                onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.background = "var(--blue)")}
+                                onMouseLeave={(e) => { if (!horizDragging.current) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                            />
+                        )}
                         {/* Right: Tabbed panel — Fraud | AI Assistant (admins/adjusters only) */}
-                        {canAction && (<div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                        {canAction && (<div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                             {/* Tab bar */}
                             {canAction && (
                                 <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -587,7 +620,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                         <div style={{ flex: 1, overflowY: "auto", padding: 20, display: rightTab === "fraud" || !canAction ? "block" : "none" }}>
                             {/* Fraud score header */}
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                <div style={{ fontSize: "2rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                                     Fraud Intelligence
                                 </div>
                                 {canAction && (
@@ -599,13 +632,13 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                             </div>
 
                             {!assessment && !fraudLoading && (
-                                <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
+                                <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: "2rem" }}>
                                     {canAction ? "Run fraud analysis to see intelligence" : "No fraud assessment available"}
                                 </div>
                             )}
 
                             {fraudLoading && (
-                                <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
+                                <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "2rem" }}>
                                     <div className="skeleton" style={{ height: 80, marginBottom: 12 }} />
                                     {[...Array(6)].map((_, i) => <div key={i} className="skeleton" style={{ height: 12, marginBottom: 10 }} />)}
                                 </div>
@@ -629,7 +662,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     {/* Layer scores */}
                                     {assessment.layer_scores && (
                                         <div style={{ marginBottom: 16 }}>
-                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
+                                            <div style={{ fontSize: "2rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
                                                 Layer Breakdown
                                             </div>
                                             {Object.entries(assessment.layer_scores).map(([name, layer]) => (
@@ -641,15 +674,15 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     {/* AI Explanation */}
                                     {assessment.explanation_text && (
                                         <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 14, marginBottom: 14 }}>
-                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
+                                            <div style={{ fontSize: "2rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
                                                 AI Explanation
                                             </div>
-                                            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{assessment.explanation_text}</p>
+                                            <p style={{ fontSize: "2rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{assessment.explanation_text}</p>
                                         </div>
                                     )}
 
                                     {/* Meta */}
-                                    <div style={{ fontSize: "0.625rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", display: "flex", flexDirection: "column", gap: 3 }}>
+                                    <div style={{ fontSize: "2rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", display: "flex", flexDirection: "column", gap: 3 }}>
                                         {assessment.config_version && <span>Config: {assessment.config_version}</span>}
                                         {assessment.ai_degraded_mode && <span style={{ color: "var(--amber)" }}>⚠ AI degraded mode</span>}
                                         <span>Assessed: {formatDateTime(assessment.created_at)}</span>
@@ -662,27 +695,30 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                             {canAction && (
                                 <div style={{ flex: 1, display: rightTab === "agent" ? "flex" : "none", flexDirection: "column", overflow: "hidden" }}>
                                     {/* Report section */}
-                                    <div style={{ flex: claimReport ? "0 0 55%" : 1, overflowY: "auto", padding: "14px 16px", borderBottom: (claimReport || reportLoading) ? "1px solid var(--border)" : "none" }}>
+                                    <div style={{ height: claimReport ? reportPanelHeight : undefined, flexGrow: claimReport ? 0 : 1, flexShrink: 0, flexBasis: claimReport ? 'auto' : 0, overflowY: "auto", padding: "16px 18px", borderBottom: (claimReport || reportLoading) ? "1px solid var(--border)" : "none" }}>
                                         {/* Header with regenerate button */}
-                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                                            <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                                AI Claim Report
-                                            </span>
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                <Sparkles size={16} color="var(--blue)" />
+                                                <span style={{ fontSize: "2rem", color: "var(--text-primary)", fontWeight: 700 }}>
+                                                    AI Claim Report
+                                                </span>
+                                            </div>
                                             {(claimReport || reportLoaded) && (
                                                 <button
                                                     className="btn btn-ghost"
                                                     onClick={regenerateReport}
                                                     disabled={reportLoading}
-                                                    style={{ padding: "3px 8px", fontSize: "0.6875rem", display: "flex", alignItems: "center", gap: 4 }}
+                                                    style={{ padding: "5px 10px", fontSize: "2rem", display: "flex", alignItems: "center", gap: 5 }}
                                                 >
-                                                    <RefreshCw size={11} style={reportLoading ? { animation: "spin 1s linear infinite" } : undefined} />
+                                                    <RefreshCw size={13} style={reportLoading ? { animation: "spin 1s linear infinite" } : undefined} />
                                                     {reportLoading ? "Generating…" : "Regenerate"}
                                                 </button>
                                             )}
                                         </div>
                                         {reportLoading && (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "2rem" }}>
                                                     <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
                                                     Generating claim report…
                                                 </div>
@@ -690,21 +726,28 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                             </div>
                                         )}
                                         {!reportLoading && claimReport && (
-                                            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit" }}>
-                                                {claimReport}
-                                            </div>
+                                            <ClaimReportRenderer report={claimReport} />
                                         )}
                                         {!reportLoading && !claimReport && reportLoaded && (
-                                            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
+                                            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "2rem" }}>
                                                 Report generation failed. Ask a question below.
                                             </div>
                                         )}
                                     </div>
+                                    {/* Vertical drag handle between report and chat */}
+                                    {claimReport && (
+                                        <div
+                                            onMouseDown={(e) => { vertDragging.current = true; vertStart.current = { y: e.clientY, h: reportPanelHeight }; document.body.style.cursor = "row-resize"; document.body.style.userSelect = "none"; }}
+                                            style={{ height: 5, flexShrink: 0, cursor: "row-resize", background: "transparent", transition: "background 150ms" }}
+                                            onMouseEnter={(e) => ((e.currentTarget as HTMLDivElement).style.background = "var(--blue)")}
+                                            onMouseLeave={(e) => { if (!vertDragging.current) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                                        />
+                                    )}
                                     {/* Follow-up chat — only shown once report is loaded */}
                                     {(claimReport || reportLoaded) && (
                                         <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
                                             {agentMessages.length === 0 && claimReport && (
-                                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>
+                                                <div style={{ fontSize: "2rem", color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>
                                                     Ask a follow-up question about this report
                                                 </div>
                                             )}
@@ -952,7 +995,7 @@ function formatTimelineDate(ts: string | null | undefined) {
 
 function ClaimTimeline({ entries, loading, documents, claimCreatedAt }: {
     entries: AuditLogEntry[]; loading: boolean;
-    documents: DocumentResponse[]; claimCreatedAt: string;
+    documents: ClaimDocumentResponse[]; claimCreatedAt: string;
 }) {
     // Build timeline events from audit entries
     const events = entries

@@ -43,7 +43,7 @@ function ClaimsContent() {
         <CommandLayout header={
                 <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
                     <FileText size={15} color="var(--text-muted)" />
-                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Claims</span>
+                    <span style={{ fontSize: "2rem", fontWeight: 600 }}>Claims</span>
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--text-muted)", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 3, padding: "1px 6px" }}>
                         {total}
                     </span>
@@ -179,20 +179,18 @@ function ClaimsContent() {
 }
 
 function NewClaimModal({ onClose }: { onClose: () => void }) {
-    const [policyNumber, setPolicyNumber] = useState("");
     const [claimType, setClaimType] = useState<ClaimType>("HEALTH");
     const [amount, setAmount] = useState("");
     const [description, setDescription] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [policyNumber2, setPolicyNumber2] = useState(""); // temp var trick
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true); setError(null);
         try {
             await claimService.create({
-                policy_number: policyNumber,
+                // policy_number omitted — resolved server-side from active policy
                 claim_type: claimType,
                 claim_amount: amount ? parseFloat(amount) : undefined,
                 description,
@@ -212,10 +210,6 @@ function NewClaimModal({ onClose }: { onClose: () => void }) {
                 <div style={{ fontWeight: 600, fontSize: "0.9375rem", marginBottom: 20 }}>New Claim</div>
                 {error && <div style={{ background: "var(--crimson-bg)", border: "1px solid var(--crimson-border)", borderRadius: 4, padding: "10px 12px", marginBottom: 14, fontSize: "0.8125rem", color: "var(--crimson)" }}>{error}</div>}
                 <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 500, marginBottom: 6 }}>Policy Number</label>
-                        <input className="input" required value={policyNumber} onChange={(e) => setPolicyNumber(e.target.value)} placeholder="POL-2024-XXXXX" />
-                    </div>
                     <div>
                         <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 500, marginBottom: 6 }}>Claim Type</label>
                         <select className="input" value={claimType} onChange={(e) => setClaimType(e.target.value as ClaimType)}>

@@ -1,29 +1,27 @@
 import api from "./api";
-import type { DocumentResponse } from "@/types";
+import type { ClaimDocumentListResponse, ClaimDocumentResponse } from "@/types";
 
 export const documentService = {
-    /** List all documents attached to a claim */
-    listForClaim: (claimId: string) =>
-        api.get<DocumentResponse[]>(`/documents`, { params: { claim_id: claimId } }).then((r) => r.data),
-
-    /** Upload a document and attach it to a claim */
-    upload: (claimId: string, file: File, documentType: string) => {
+    /** Upload a document using the ClaimDocument model (template-aware OCR) */
+    uploadClaimDoc: (claimId: string, file: File, documentTypeCode: string, requirementId?: string) => {
         const form = new FormData();
         form.append("file", file);
-        form.append("document_type", documentType);
+        form.append("document_type_code", documentTypeCode);
         form.append("claim_id", claimId);
-        return api.post<DocumentResponse>(`/documents`, form, {
+        if (requirementId) form.append("document_requirement_id", requirementId);
+        return api.post<ClaimDocumentResponse>(`/claim-documents`, form, {
             headers: { "Content-Type": "multipart/form-data" },
-            // File upload is now near-instant (extraction runs in background).
-            // 120 s safety net is kept for very large files on slow connections.
             timeout: 120_000,
         }).then((r) => r.data);
     },
 
-    /** Update extracted data for a document */
-    updateExtractedData: (documentId: string, extractedData: Record<string, unknown>, requiresManualReview?: boolean) =>
-        api.patch<DocumentResponse>(`/documents/${documentId}/extracted-data`, {
+    /** List ClaimDocuments for a claim (new model) */
+    listClaimDocs: (claimId: string) =>
+        api.get<ClaimDocumentListResponse>(`/claim-documents`, { params: { claim_id: claimId } }).then((r) => r.data.items),
+
+    /** Update extracted data for a ClaimDocument (manual correction) */
+    updateClaimDocData: (docId: string, extractedData: Record<string, unknown>) =>
+        api.patch<ClaimDocumentResponse>(`/claim-documents/${docId}/extracted-data`, {
             extracted_data: extractedData,
-            requires_manual_review: requiresManualReview,
         }).then((r) => r.data),
 };
