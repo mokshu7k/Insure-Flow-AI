@@ -131,7 +131,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [uploadType, setUploadType] = useState("INVOICE");
     const [uploading, setUploading] = useState(false);
-    const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+    const [expandedDocIds, setExpandedDocIds] = useState<Set<string>>(new Set());
+    const toggleDoc = (docId: string) => setExpandedDocIds((prev) => { const next = new Set(prev); next.has(docId) ? next.delete(docId) : next.add(docId); return next; });
     const [docError, setDocError] = useState<string | null>(null);
     // Right-panel tabs
     const [rightTab, setRightTab] = useState<"fraud" | "agent">("fraud");
@@ -186,9 +187,11 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
             setClaim(c);
             setDocuments(docs);
             startPollingIfNeeded(docs);
-            // Fetch existing fraud assessment (null if none yet)
-            const a = await fraudService.getAssessment(id);
-            if (a) setAssessment(a);
+            // Fetch existing fraud assessment only for admins/adjusters
+            if (canAction) {
+                const a = await fraudService.getAssessment(id);
+                if (a) setAssessment(a);
+            }
         } catch (e: unknown) {
             setError("Claim not found");
         } finally {
@@ -378,8 +381,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                         {[...Array(6)].map((_, i) => <div key={i} className="skeleton" style={{ height: 14, marginBottom: 12, width: `${70 + (i % 3) * 10}%` }} />)}
                     </div>
                 ) : claim && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 0, height: "100%" }}>
-                        {/* Left: Claim Details + Documents + Timeline */}
+                    <div style={{ display: "grid", gridTemplateColumns: canAction ? "1fr 340px" : "1fr", gap: 0, height: "100%" }}>
+                        {/* Left: Claim Details + Documents */}
                         <div style={{ padding: 20, overflowY: "auto", borderRight: "1px solid var(--border)" }}>
 
                             {/* Adjuster notes banner — visible to all roles */}
@@ -451,16 +454,16 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     <div key={doc.id}>
                                         <button
                                             type="button"
-                                            onClick={() => setSelectedDocId(selectedDocId === doc.id.toString() ? null : doc.id.toString())}
+                                            onClick={() => toggleDoc(doc.id.toString())}
                                             style={{
                                                 width: "100%",
                                                 display: "flex",
                                                 alignItems: "center",
                                                 gap: 10,
                                                 padding: "8px 0",
-                                                borderBottom: "1px solid var(--border)",
-                                                background: selectedDocId === doc.id.toString() ? "var(--bg-surface)" : "transparent",
+                                                background: "transparent",
                                                 border: "none",
+                                                borderBottom: "1px solid var(--border)",
                                                 cursor: "pointer",
                                                 color: "inherit",
                                                 textAlign: "left",
@@ -479,8 +482,12 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                     {doc.extraction_confidence ? `${(doc.extraction_confidence * 100).toFixed(0)}%` : "✓"}
                                                 </span>
                                             ) : null}
+                                            {expandedDocIds.has(doc.id.toString())
+                                                ? <ChevronUp size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                                                : <ChevronDown size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                                            }
                                         </button>
-                                        {selectedDocId === doc.id.toString() && (
+                                        {expandedDocIds.has(doc.id.toString()) && (
                                             <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
                                                 {doc.validation_status === "pending" ? (
                                                     <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--blue)", fontSize: "0.75rem" }}>
@@ -496,7 +503,6 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                             document={doc}
                                                             onUpdate={(updated) => {
                                                                 setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-                                                                setSelectedDocId(null);
                                                             }}
                                                             onError={(error) => setDocError(error)}
                                                         />
@@ -506,7 +512,6 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                         document={doc}
                                                         onUpdate={(updated) => {
                                                             setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-                                                            setSelectedDocId(null);
                                                         }}
                                                         onError={(error) => setDocError(error)}
                                                     />
@@ -519,7 +524,6 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                             document={doc}
                                                             onUpdate={(updated) => {
                                                                 setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-                                                                setSelectedDocId(null);
                                                             }}
                                                             onError={(error) => setDocError(error)}
                                                         />
@@ -552,8 +556,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
 
                         </div>
 
-                        {/* Right: Tabbed panel — Fraud | AI Assistant */}
-                        <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                        {/* Right: Tabbed panel — Fraud | AI Assistant (admins/adjusters only) */}
+                        {canAction && (<div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
                             {/* Tab bar */}
                             {canAction && (
                                 <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
@@ -769,7 +773,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     </div>
                                 </div>
                             )}
-                        </div>{/* end right tabbed panel */}
+                        </div>)}{/* end right tabbed panel */}
                     </div>
                 )}
             </CommandLayout>
