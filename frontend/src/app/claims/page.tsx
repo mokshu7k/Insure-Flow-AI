@@ -5,6 +5,7 @@ import { CommandLayout } from "@/components/layout/CommandLayout";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { RiskBadge, StatusPill, MonoValue } from "@/components/ui";
 import { useClaimStore } from "@/store/claimStore";
+import { useAuthStore } from "@/store/authStore";
 import { claimService } from "@/services/claimService";
 import { Plus, Filter, ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import type { ClaimStatus, ClaimType } from "@/types";
@@ -33,8 +34,8 @@ export default function ClaimsPage() {
 
 function ClaimsContent() {
     const router = useRouter();
-    const [showNewClaim, setShowNewClaim] = useState(false);
     const [filterOpen, setFilterOpen] = useState(false);
+    const user = useAuthStore((s) => s.user);
     const { claims, total, totalPages, page, pageSize, isLoading, statusFilter, fetchClaims, setPage, setFilter } = useClaimStore();
 
     useEffect(() => { fetchClaims(); }, []);
@@ -76,10 +77,12 @@ function ClaimsContent() {
                                 </div>
                             )}
                         </div>
-                        <button className="btn btn-primary" onClick={() => router.push("/claims/new")}>
-                            <Plus size={13} />
-                            New claim
-                        </button>
+                        {user?.role === "CUSTOMER" && (
+                            <button className="btn btn-primary" onClick={() => router.push("/claims/new")}>
+                                <Plus size={13} />
+                                New claim
+                            </button>
+                        )}
                     </div>
                 </div>
             }>
@@ -171,67 +174,6 @@ function ClaimsContent() {
                         </div>
                     )}
                 </div>
-
-                {/* New Claim Modal */}
-                {showNewClaim && <NewClaimModal onClose={() => { setShowNewClaim(false); fetchClaims(); }} />}
             </CommandLayout>
-    );
-}
-
-function NewClaimModal({ onClose }: { onClose: () => void }) {
-    const [claimType, setClaimType] = useState<ClaimType>("HEALTH");
-    const [amount, setAmount] = useState("");
-    const [description, setDescription] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true); setError(null);
-        try {
-            await claimService.create({
-                // policy_number omitted — resolved server-side from active policy
-                claim_type: claimType,
-                claim_amount: amount ? parseFloat(amount) : undefined,
-                description,
-            });
-            onClose();
-        } catch (err: unknown) {
-            const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-            setError(msg || "Failed to create claim");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, padding: 28, width: "100%", maxWidth: 440 }}>
-                <div style={{ fontWeight: 600, fontSize: "0.9375rem", marginBottom: 20 }}>New Claim</div>
-                {error && <div style={{ background: "var(--crimson-bg)", border: "1px solid var(--crimson-border)", borderRadius: 4, padding: "10px 12px", marginBottom: 14, fontSize: "0.8125rem", color: "var(--crimson)" }}>{error}</div>}
-                <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 500, marginBottom: 6 }}>Claim Type</label>
-                        <select className="input" value={claimType} onChange={(e) => setClaimType(e.target.value as ClaimType)}>
-                            <option value="HEALTH">Health</option>
-                            <option value="MOTOR">Motor</option>
-                            <option value="REIMBURSEMENT">Reimbursement</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 500, marginBottom: 6 }}>Claim Amount (₹)</label>
-                        <input className="input" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-                    </div>
-                    <div>
-                        <label style={{ display: "block", fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 500, marginBottom: 6 }}>Description</label>
-                        <textarea className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the incident…" style={{ resize: "vertical", minHeight: 80 }} />
-                    </div>
-                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
-                        <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-                        <button type="submit" className="btn btn-primary" disabled={loading}>{loading ? "Submitting…" : "Submit claim"}</button>
-                    </div>
-                </form>
-            </div>
-        </div>
     );
 }

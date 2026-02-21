@@ -2,6 +2,20 @@ import api from "./api";
 import type { ClaimDocumentListResponse, ClaimDocumentResponse } from "@/types";
 
 export const documentService = {
+    /** Quick relevance check — no DB writes, no OCR. Validates doc is insurance-related. */
+    validateDocRelevance: (file: File, documentTypeCode: string, claimType: string) => {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("document_type_code", documentTypeCode);
+        form.append("claim_type", claimType);
+        return api.post<{ is_relevant: boolean; reason: string; detected_type: string }>(
+            `/claim-documents/validate-relevance`, form, {
+                headers: { "Content-Type": "multipart/form-data" },
+                timeout: 30_000,
+            }
+        ).then((r) => r.data);
+    },
+
     /** Upload a document using the ClaimDocument model (template-aware OCR) */
     uploadClaimDoc: (claimId: string, file: File, documentTypeCode: string, requirementId?: string) => {
         const form = new FormData();

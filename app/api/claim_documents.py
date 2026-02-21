@@ -15,6 +15,32 @@ from app.services import claim_document_service
 router = APIRouter(prefix="/claim-documents", tags=["claim-documents"])
 
 
+@router.post("/validate-relevance")
+async def validate_document_relevance(
+    document_type_code: str = Form(...),
+    claim_type: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Quick relevance check — no DB writes, no OCR.
+    Returns whether the uploaded file looks like an insurance document
+    of the expected type before the full upload+OCR pipeline runs."""
+    from app.config import settings
+
+    content = await file.read()
+    if len(content) > settings.MAX_UPLOAD_SIZE:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="File too large")
+
+    result = await claim_document_service.validate_document_relevance(
+        content=content,
+        content_type=file.content_type or "",
+        document_type_code=document_type_code,
+        claim_type=claim_type,
+    )
+    return result
+
+
 @router.post("", response_model=ClaimDocumentResponse, status_code=201)
 async def upload_claim_document(
     background_tasks: BackgroundTasks,

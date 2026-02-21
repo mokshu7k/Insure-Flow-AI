@@ -44,9 +44,9 @@ async def _resolve_policy(db: AsyncSession, user_id: uuid.UUID, claim_type: str)
 
 
 async def create_claim(payload: ClaimCreate, user_id: str, role: str, db: AsyncSession) -> Claim:
-    # PROVIDER users cannot file claims
-    if role == "PROVIDER":
-        raise PermissionDeniedError("Providers cannot file claims. Use the provider dashboard to view claims.")
+    # Only CUSTOMER role can file claims
+    if role != "CUSTOMER":
+        raise PermissionDeniedError(f"Only customers can file new claims. Your role ({role}) does not have claim filing permissions.")
 
     uid = uuid.UUID(user_id)
 

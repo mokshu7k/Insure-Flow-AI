@@ -607,6 +607,60 @@ async def get_claim_document_bytes(
     return raw, doc
 
 
+# ── Quick relevance check (no DB writes) ─────────────────────────────────────
+
+async def validate_document_relevance(
+    content: bytes,
+    content_type: str,
+    document_type_code: str,
+    claim_type: str,
+) -> dict[str, Any]:
+    """
+    Fast Gemini relevance check — no DB writes, no OCR extraction.
+    Returns whether the uploaded file looks like an insurance document
+    of the expected type/claim category.
+    """
+    prompt = f"""You are an insurance document validator.
+
+Examine this document carefully and determine:
+1. Is it genuinely related to insurance — specifically a {claim_type} insurance claim?
+2. Does it match or closely match the expected document type: "{document_type_code}"?
+
+Respond ONLY with a valid JSON object (no markdown fences):
+{{
+  "is_relevant": true,
+  "reason": "brief 1-2 sentence explanation",
+  "detected_type": "what this document actually appears to be"
+}}
+
+Set "is_relevant" to FALSE only if:
+- The document is completely irrelevant to insurance (e.g. a food photo, social media screenshot, blank page, personal selfie, shopping receipt, utility bill for a health claim, etc.)
+- The document clearly belongs to a different insurance domain (e.g. a motor RC book for a HEALTH claim, or a discharge summary for a MOTOR claim)
+
+Set "is_relevant" to TRUE if it looks like a reasonable insurance document for {claim_type}, even if formatting differs or image quality is poor.
+"""
+    result = await _call_gemini(content, content_type, prompt)
+    fields = result.get("fields", {})
+
+    # If Gemini returned nothing, be lenient — accept for manual review
+    if not fields:
+        return {
+            "is_relevant": True,
+            "reason": "Could not automatically verify — accepted for manual review.",
+            "detected_type": document_type_code,
+        }
+
+    is_relevant = fields.get("is_relevant", True)
+    reason = fields.get("reason", "Document appears relevant.")
+    detected_type = fields.get("detected_type", document_type_code)
+
+    return {
+        "is_relevant": bool(is_relevant),
+        "reason": str(reason),
+        "detected_type": str(detected_type),
+    }
+
+
 # ── Update extracted data (manual correction) ────────────────────────────────
 
 async def update_claim_document_data(
