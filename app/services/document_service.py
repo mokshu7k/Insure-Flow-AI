@@ -5,13 +5,14 @@ No OCR, no heuristics — Gemini reads the document.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from pathlib import Path
 from typing import Any
 
 from cryptography.fernet import Fernet
-from fastapi import UploadFile
+from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +60,14 @@ async def upload_document(
     file: UploadFile,
     document_type: str,
     db: AsyncSession,
+    background_tasks: BackgroundTasks | None = None,
 ) -> Document:
+    """
+    Save the file immediately and return the Document record.
+    Gemini extraction + DocumentGatekeeper validation run asynchronously
+    in the background so the HTTP response is never delayed by a slow
+    third-party AI API call.
+    """
     # Verify claim exists and user has access
     result = await db.execute(select(Claim).where(Claim.id == uuid.UUID(claim_id)))
     claim = result.scalar_one_or_none()
@@ -72,25 +80,7 @@ async def upload_document(
     if len(content) > settings.MAX_UPLOAD_SIZE:
         raise BusinessRuleError(f"File too large (max {settings.MAX_UPLOAD_SIZE // 1024 // 1024} MB)")
 
-    # Extract structured data FIRST (needed for validation)
-    extraction = await _extract(content, file.content_type or "", document_type)
-    extracted_text = extraction.get("raw_text", "") or str(extraction.get("fields", {}))
-    
-    # Validate document using DocumentGatekeeper
-    gatekeeper = _get_gatekeeper()
-    validation_decision = await gatekeeper.validate_document(
-        file_bytes=content,
-        filename=file.filename or "unknown",
-        expected_type=document_type,
-        extracted_text=extracted_text,
-        holder_name=None  # Could extract from claim/user data if available
-    )
-    
-    # Hard reject if validation failed
-    if validation_decision.status == DocumentDecisionStatus.REJECTED_INVALID:
-        raise BusinessRuleError(validation_decision.reason)
-    
-    # Encrypt and persist
+    # Encrypt and persist immediately — do NOT wait for Gemini here
     encrypted = _get_fernet().encrypt(content)
     storage_dir = Path(settings.ENCRYPTED_STORAGE_DIR) / claim_id
     storage_dir.mkdir(parents=True, exist_ok=True)
@@ -105,14 +95,14 @@ async def upload_document(
         storage_path=str(file_path),
         original_filename=file.filename,
         content_type=file.content_type,
-        extracted_data=extraction.get("fields"),
-        extraction_confidence=extraction.get("confidence"),
-        requires_manual_review=extraction.get("confidence", 1.0) < 0.5,
-        # Validation results from DocumentGatekeeper
-        validation_status=validation_decision.status.value,
-        validation_reason=validation_decision.reason,
-        authenticity_metadata_json=validation_decision.metadata,
-        fraud_signal_weight=validation_decision.fraud_signal_weight,
+        extracted_data=None,
+        extraction_confidence=None,
+        requires_manual_review=True,   # conservative default until extraction runs
+        # Extraction/validation are pending — updated by background task
+        validation_status="pending",
+        validation_reason="AI extraction queued — check back shortly",
+        authenticity_metadata_json=None,
+        fraud_signal_weight=None,
     )
     db.add(doc)
     await log_action(
@@ -125,7 +115,106 @@ async def upload_document(
     )
     await db.commit()
     await db.refresh(doc)
+
+    # Schedule background extraction + validation (non-blocking)
+    _original_filename = file.filename or "unknown"
+    _doc_id = str(doc.id)
+    if background_tasks is not None:
+        background_tasks.add_task(
+            _run_extraction_background,
+            doc_id=_doc_id,
+            content=content,
+            content_type=file.content_type or "",
+            doc_type=document_type,
+            original_filename=_original_filename,
+        )
+    else:
+        # Fallback when called outside a request context (e.g. tests)
+        asyncio.ensure_future(
+            _run_extraction_background(
+                doc_id=_doc_id,
+                content=content,
+                content_type=file.content_type or "",
+                doc_type=document_type,
+                original_filename=_original_filename,
+            )
+        )
+
     return doc
+
+
+async def _run_extraction_background(
+    doc_id: str,
+    content: bytes,
+    content_type: str,
+    doc_type: str,
+    original_filename: str = "unknown",
+) -> None:
+    """
+    Run Gemini extraction + DocumentGatekeeper validation in the background.
+    Opens its own DB session so this runs safely after the HTTP response
+    has already been sent.
+    """
+    from app.db.session import AsyncSessionLocal
+
+    logger.info("Background extraction started for document %s", doc_id)
+    try:
+        # ── 1. Gemini extraction (may take 20-40 s) ────────────────────────
+        extraction = await _extract(content, content_type, doc_type)
+        extracted_text = extraction.get("raw_text", "") or str(extraction.get("fields", {}))
+
+        # ── 2. DocumentGatekeeper validation ──────────────────────────────
+        gatekeeper = _get_gatekeeper()
+        validation_decision = await gatekeeper.validate_document(
+            file_bytes=content,
+            filename=original_filename,
+            expected_type=doc_type,
+            extracted_text=extracted_text,
+            holder_name=None,
+        )
+
+        # ── 3. Persist results ─────────────────────────────────────────────
+        async with AsyncSessionLocal() as bg_db:
+            result = await bg_db.execute(select(Document).where(Document.id == uuid.UUID(doc_id)))
+            doc = result.scalar_one_or_none()
+            if doc is None:
+                logger.warning("Background extraction: document %s not found in DB", doc_id)
+                return
+
+            doc.extracted_data = extraction.get("fields")
+            doc.extraction_confidence = extraction.get("confidence")
+            doc.requires_manual_review = extraction.get("confidence", 1.0) < 0.5
+            doc.validation_status = validation_decision.status.value
+            doc.validation_reason = validation_decision.reason
+            doc.authenticity_metadata_json = validation_decision.metadata
+            doc.fraud_signal_weight = validation_decision.fraud_signal_weight
+
+            await bg_db.commit()
+            logger.info(
+                "Background extraction complete for document %s — status=%s fields=%d",
+                doc_id,
+                validation_decision.status.value,
+                len(extraction.get("fields") or {}),
+            )
+
+    except Exception as exc:
+        logger.error(
+            "Background extraction failed for document %s: %s",
+            doc_id, exc, exc_info=True,
+        )
+        # Mark the document so staff know to review it manually
+        try:
+            from app.db.session import AsyncSessionLocal as _ASL
+            async with _ASL() as bg_db:
+                result = await bg_db.execute(select(Document).where(Document.id == uuid.UUID(doc_id)))
+                doc = result.scalar_one_or_none()
+                if doc:
+                    doc.validation_status = "extraction_failed"
+                    doc.validation_reason = f"Automated extraction error: {exc}"
+                    doc.requires_manual_review = True
+                    await bg_db.commit()
+        except Exception:
+            pass  # best-effort
 
 
 # ── List documents for a claim ───────────────────────────────────────────────

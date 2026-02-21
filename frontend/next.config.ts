@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Increase the proxy timeout to 2 minutes so long-running backend calls
+  // (e.g. AI extraction) don't cause ECONNRESET in the browser.
+  experimental: {
+    proxyTimeout: 120_000,
+  },
 };
 
 export default nextConfig;

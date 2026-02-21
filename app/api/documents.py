@@ -1,7 +1,7 @@
 """Document routes — upload and download."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response as FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,7 @@ async def list_documents(
 
 @router.post("", response_model=DocumentResponse, status_code=201)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     claim_id: str = Form(...),
     document_type: str = Form(...),
     file: UploadFile = File(...),
@@ -45,6 +46,7 @@ async def upload_document(
         file=file,
         document_type=document_type,
         db=db,
+        background_tasks=background_tasks,
     )
     return doc
 

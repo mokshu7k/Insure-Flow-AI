@@ -36,7 +36,15 @@ export function ClaimAssistantBubble() {
         setMessages((prev) => [...prev, { role: "user", content: trimmed }]);
         setLoading(true);
         try {
-            const result = await agentService.sendMessage(trimmed, sessionId);
+            let activeSessionId = sessionId;
+            if (!activeSessionId) {
+                activeSessionId = await agentService.createSession();
+                setSessionId(activeSessionId);
+                if (typeof window !== "undefined") {
+                    localStorage.setItem("agent_session_id", activeSessionId);
+                }
+            }
+            const result = await agentService.sendMessage(trimmed, activeSessionId);
             setSessionId(result.session_id);
             setMessages((prev) => [...prev, { role: "agent", content: result.reply }]);
         } catch {
@@ -105,7 +113,23 @@ export function ClaimAssistantBubble() {
                                 </div>
                             </div>
                         )}
-                        {messages.map((msg, i) => (
+                        {messages.map((msg, i) => {
+                            // Format content: ensure → markers are on new lines
+                            const formatContent = (text: string) => {
+                                return text
+                                    .split('\n')
+                                    .map((line) => {
+                                        const trimmed = line.trim();
+                                        if (trimmed.startsWith('→')) {
+                                            return trimmed;
+                                        }
+                                        return line;
+                                    })
+                                    .join('\n');
+                            };
+                            const formattedContent = formatContent(msg.content);
+                            
+                            return (
                             <div
                                 key={i}
                                 style={{
@@ -122,9 +146,10 @@ export function ClaimAssistantBubble() {
                                     wordBreak: "break-word",
                                 }}
                             >
-                                {msg.content}
+                                {formattedContent}
                             </div>
-                        ))}
+                            );
+                        })}
                         {loading && (
                             <div style={{
                                 alignSelf: "flex-start",

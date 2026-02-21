@@ -26,7 +26,7 @@ class ClaimStatus:
 
     # Valid forward transitions  {current: set of allowed next states}
     TRANSITIONS: dict[str, set[str]] = {
-        SUBMITTED:               {UNDER_REVIEW, PRE_AUTHORIZED},
+        SUBMITTED:               {UNDER_REVIEW, PRE_AUTHORIZED, REJECTED, APPROVED},
         UNDER_REVIEW:            {APPROVED, REJECTED, MANUAL_REVIEW_REQUIRED},
         MANUAL_REVIEW_REQUIRED:  {APPROVED, REJECTED},
         APPROVED:                {SETTLED},

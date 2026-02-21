@@ -311,7 +311,7 @@ function ChatContent() {
                                             display: "flex", gap: 4, alignItems: "center",
                                         }}>
                                             <Loader2 size={13} style={{ animation: "spin 1s linear infinite", color: "var(--text-muted)" }} />
-                                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Thinkingâ€¦</span>
+                                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Thinking…</span>
                                         </div>
                                     </div>
                                 )}
@@ -351,7 +351,7 @@ function ChatContent() {
                                     sendMessage(input);
                                 }
                             }}
-                            placeholder="Ask about your claimsâ€¦ (Enter to send)"
+                            placeholder="Ask about your claims… (Enter to send)"
                             disabled={loading}
                             style={{
                                 flex: 1, resize: "none", overflowY: "hidden",
@@ -497,6 +497,24 @@ function AgentAvatar() {
 
 function MessageBubble({ msg }: { msg: Message }) {
     const isUser = msg.role === "user";
+    
+    // Format content: ensure → markers start on new lines
+    const formatContent = (text: string) => {
+        return text
+            .split('\n')
+            .map((line, i) => {
+                const trimmed = line.trim();
+                // If line starts with →, ensure it's properly indented
+                if (trimmed.startsWith('→')) {
+                    return trimmed;
+                }
+                return line;
+            })
+            .join('\n');
+    };
+    
+    const formattedContent = formatContent(msg.content);
+    
     return (
         <div style={{
             display: "flex", alignItems: "flex-start", gap: 8,
@@ -525,7 +543,7 @@ function MessageBubble({ msg }: { msg: Message }) {
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
             }}>
-                {msg.content}
+                {formattedContent}
                 <div style={{
                     fontSize: "0.6rem",
                     color: isUser ? "rgba(255,255,255,0.6)" : "var(--text-muted)",

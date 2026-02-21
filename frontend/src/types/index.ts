@@ -16,7 +16,8 @@ export interface ClaimCreate {
 export type ClaimType = "HEALTH" | "MOTOR" | "REIMBURSEMENT";
 export type ClaimStatus =
     | "SUBMITTED" | "OCR_PROCESSED" | "UNDER_REVIEW" | "FRAUD_ANALYZED"
-    | "APPROVED" | "REJECTED" | "MANUAL_REVIEW_REQUIRED" | "SETTLED";
+    | "APPROVED" | "REJECTED" | "MANUAL_REVIEW_REQUIRED" | "SETTLED"
+    | "PRE_AUTHORIZED";
 
 export interface Claim {
     id: string;
@@ -134,3 +135,82 @@ export interface ConsentRecord { id: string; version: string; timestamp: string;
 export interface AdjusterChatRequest { message: string; claim_id?: string; }
 export interface AdjusterChatResponse { response: string; report?: string | null; }
 export interface AdjusterReportResponse { report: string | null; claim_id: string; cached: boolean; generated_at?: string; }
+
+// ── Cashless ──────────────────────────────────────
+export interface CashlessQRRequest {
+    claim_id: string;
+    estimate_amount: number;
+    patient_name: string;
+    procedure_name: string;
+    hospital_name: string;
+    estimate_data?: Record<string, unknown>;
+}
+export interface CashlessQRResponse {
+    id: string;
+    claim_id: string;
+    provider_id: string;
+    token: string;
+    approved_amount: number;
+    patient_name: string | null;
+    procedure_name: string | null;
+    hospital_name: string | null;
+    estimate_data: Record<string, unknown> | null;
+    status: string;
+    expires_at: string;
+    qr_image_base64: string;
+}
+export interface CashlessScanResponse {
+    qr_token_id: string;
+    claim_id: string;
+    policy_number: string;
+    claim_type: string;
+    patient_name: string | null;
+    procedure_name: string | null;
+    hospital_name: string | null;
+    estimate_amount: number;
+    estimate_data: Record<string, unknown> | null;
+    status: string;
+    expires_at: string;
+}
+export interface CashlessAcceptRequest { token: string; }
+export interface CashlessAcceptResponse { message: string; claim_id: string; status: string; }
+export interface CashlessAuthorizationRequest {
+    qr_token_id: string;
+    decision: "PRE_AUTHORIZED" | "REJECTED";
+    approved_amount?: number;
+    notes?: string;
+}
+export interface CashlessAuthorizationResponse {
+    message: string;
+    claim_id: string;
+    qr_token_id: string;
+    status: string;
+    approved_amount: number | null;
+}
+export interface CashlessPendingItem {
+    qr_token_id: string;
+    claim_id: string;
+    policy_number: string;
+    claim_type: string;
+    patient_name: string | null;
+    procedure_name: string | null;
+    hospital_name: string | null;
+    estimate_amount: number;
+    estimate_data: Record<string, unknown> | null;
+    status: string;
+    accepted_at: string | null;
+    expires_at: string;
+}
+export interface NetworkClaimItem {
+    id: string;
+    user_id: string;
+    policy_number: string;
+    claim_type: string;
+    claim_amount: number | null;
+    description: string | null;
+    status: string;
+    created_at: string;
+    has_documents: boolean;
+    has_qr: boolean;
+}
+export interface NetworkClaimsResponse { items: NetworkClaimItem[]; total: number; }

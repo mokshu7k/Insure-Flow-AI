@@ -506,28 +506,76 @@ class DocumentGatekeeper:
         return self._detect_mime_from_bytes(file_bytes) is not None
     
     def _types_match(self, detected: str, expected: str) -> bool:
-        """Fuzzy match document types."""
+        """Fuzzy match document types including all system DocumentType enum values."""
         detected = detected.lower().strip()
         expected = expected.lower().strip()
-        
+
         # Exact match
         if detected == expected:
             return True
-        
-        # Common variations
-        type_aliases = {
-            "aadhaar": ["aadhaar card", "aadhar", "uid", "uidai"],
-            "pan": ["pan card", "permanent account number"],
-            "medical_bill": ["medical bill", "hospital bill", "medical invoice", "invoice"],
-            "prescription": ["prescription", "medical prescription", "doctor prescription"],
-            "discharge_summary": ["discharge summary", "discharge report", "hospital discharge"],
+
+        # Generic catch-all ─ always accept (no meaningful type to match against)
+        if expected in ("other", "OTHER"):
+            return True
+
+        # Canonical → list of natural-language aliases Gemini might return
+        type_aliases: dict[str, list[str]] = {
+            # ── Identity documents ──────────────────────────────────────────
+            "aadhaar": ["aadhaar", "aadhaar card", "aadhar", "aadhar card", "uid", "uidai",
+                        "aadhaar identity", "aadhaar id"],
+            "pan": ["pan", "pan card", "permanent account number", "pan number"],
+            # ── Medical ─────────────────────────────────────────────────────
+            "discharge_summary": [
+                "discharge summary", "discharge_summary", "discharge report",
+                "hospital discharge", "discharge letter", "discharge certificate",
+                "patient discharge",
+            ],
+            "medical_report": [
+                "medical report", "medical_report", "lab report", "laboratory report",
+                "diagnostic report", "test report", "blood report", "radiology report",
+                "pathology report", "investigation report",
+            ],
+            "prescription": [
+                "prescription", "medical prescription", "doctor prescription",
+                "rx", "medicine prescription", "drug prescription",
+            ],
+            "invoice": [
+                "invoice", "bill", "medical bill", "hospital bill", "medical invoice",
+                "hospital invoice", "receipt", "billing statement", "payment receipt",
+                "tax invoice", "insurance invoice", "policy document", "policy",
+                "insurance policy",
+            ],
+            # ── Motor ────────────────────────────────────────────────────────
+            "vehicle_rc": [
+                "vehicle rc", "vehicle_rc", "registration certificate",
+                "vehicle registration", "rc book", "vehicle registration certificate",
+                "rc", "car rc", "bike rc", "registration card",
+            ],
+            "police_report": [
+                "police report", "police_report", "fir", "first information report",
+                "accident report", "police complaint", "police fir",
+            ],
+            "estimate": [
+                "estimate", "repair estimate", "workshop estimate", "cost estimate",
+                "damage estimate", "repair bill", "garage estimate", "quotation",
+            ],
         }
-        
+
+        # Build reverse lookup: alias → canonical
         for canonical, aliases in type_aliases.items():
-            if expected in aliases or expected == canonical:
-                if detected in aliases or detected == canonical:
+            all_forms = {canonical} | set(aliases)
+            # Normalise expected
+            if expected in all_forms or expected.replace("_", " ") in all_forms:
+                # expected maps to this canonical; check detected
+                if detected in all_forms or detected.replace("_", " ") in all_forms:
                     return True
-        
+
+        # Substring fallback: if expected key words appear in detected string
+        exp_words = set(expected.replace("_", " ").split())
+        det_words = set(detected.replace("_", " ").split())
+        if exp_words and exp_words.issubset(det_words):
+            return True
+
         return False
     
     async def _classify_with_gemini(
@@ -558,7 +606,7 @@ class DocumentGatekeeper:
             if not self._gemini_model:
                 import google.generativeai as genai
                 genai.configure(api_key=self.gemini_api_key)
-                self._gemini_model = genai.GenerativeModel("models/gemini-1.5-flash")
+                self._gemini_model = genai.GenerativeModel("models/gemini-2.5-flash")
             
             # Prepare content part
             is_pdf = file_bytes[:4] == b'%PDF'
@@ -576,29 +624,29 @@ class DocumentGatekeeper:
                     "inline_data": {"mime_type": mime_type, "data": blob_data}
                 }
             
-            # Strict classification prompt
-            prompt = f"""You are a document classifier for an insurance system.
+            # Classification prompt using the exact type tokens this system uses
+            prompt = f"""You are a document classifier for an insurance claims system.
 
-Analyze this document and determine:
-1. What type of document is this?
-2. Is it relevant to insurance/claims processing?
-3. Does it match the expected type: "{expected_type}"?
+Analyze this document and determine its type. Use ONLY one of the following type tokens:
+- discharge_summary  (hospital discharge summary / discharge letter)
+- medical_report     (lab report, diagnostic report, radiology, pathology)
+- prescription       (doctor prescription / Rx)
+- invoice            (hospital bill, medical invoice, policy document, payment receipt)
+- vehicle_rc         (vehicle registration certificate / RC book)
+- police_report      (FIR / first information report / accident report)
+- estimate           (repair estimate / workshop quotation)
+- aadhaar            (Aadhaar card / UIDAI identity card)
+- pan                (PAN card / Permanent Account Number card)
+- other              (anything else)
 
-Common document types:
-- aadhaar (Aadhaar card / UIDAI identity document)
-- pan (PAN card / Permanent Account Number)
-- medical_bill (hospital bills, invoices)
-- prescription (doctor prescriptions)
-- discharge_summary
-- laboratory_report
-- policy_document
+Expected type for this upload: "{expected_type}"
 
 Respond ONLY with valid JSON (no markdown, no explanation):
 {{
-  "detected_type": "...",
+  "detected_type": "<one of the tokens above>",
   "is_relevant": true/false,
   "confidence": 0.0-1.0,
-  "reason": "brief explanation"
+  "reason": "one sentence"
 }}"""
             
             # Call Gemini in threadpool

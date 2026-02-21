@@ -83,9 +83,9 @@ CLAIMS_TEMPLATE = [
 # Cashless claims for customer1 assigned to hospital@provider.ai
 CASHLESS_CLAIMS_TEMPLATE = [
     # (policy_number, claim_amount, status, daysAgo)
-    ("POL-CASHLESS-2026-001", 150_000.0, "SUBMITTED", 3),
-    ("POL-CASHLESS-2026-002",  95_000.0, "SUBMITTED", 1),
-    ("POL-CASHLESS-TEST-001",  50_000.0, "SUBMITTED", 0),
+    ("POL-CASHLESS-OP-001",   75_000.0,  "SUBMITTED", 2),
+    ("POL-CASHLESS-NEURO-02", 120_000.0, "SUBMITTED", 1),
+    ("POL-CASHLESS-CARDIO-03", 180_000.0, "SUBMITTED", 0),
 ]
 
 

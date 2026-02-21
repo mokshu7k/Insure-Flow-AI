@@ -5,6 +5,7 @@ INSURER_ADMIN and CLAIM_ADJUSTER roles only.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -36,6 +37,20 @@ def _content_str(content) -> str:
                 parts.append(str(block))
         return "".join(parts).strip()
     return str(content)
+
+
+def _sanitize_response(text: str) -> str:
+    """Remove Thinking markers and cleanup response text from Gemini."""
+    # Remove [Thinking: ...] markers
+    text = re.sub(r'\[?Thinking[:\s]*[^\]]*\]?', '', text)
+    # Remove <thinking>...</thinking> tags
+    text = re.sub(r'<thinking>[\s\S]*?</thinking>', '', text)
+    # Remove special unicode characters that might appear as control chars
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Clean up multiple spaces/newlines
+    text = re.sub(r'\n\s*\n', '\n', text)
+    text = re.sub(r'  +', ' ', text)
+    return text.strip()
 
 
 class ChatRequest(BaseModel):
@@ -86,7 +101,8 @@ async def adjuster_chat(
         (m for m in reversed(result["messages"]) if hasattr(m, "content") and not getattr(m, "tool_calls", None)),
         None,
     )
-    reply = _content_str(last_ai.content) if last_ai else "No response generated."
+    raw_reply = _content_str(last_ai.content) if last_ai else "No response generated."
+    reply = _sanitize_response(raw_reply)
     return ChatResponse(response=reply, report=result.get("report"))
 
 

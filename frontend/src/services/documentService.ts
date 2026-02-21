@@ -14,6 +14,9 @@ export const documentService = {
         form.append("claim_id", claimId);
         return api.post<DocumentResponse>(`/documents`, form, {
             headers: { "Content-Type": "multipart/form-data" },
+            // File upload is now near-instant (extraction runs in background).
+            // 120 s safety net is kept for very large files on slow connections.
+            timeout: 120_000,
         }).then((r) => r.data);
     },
 

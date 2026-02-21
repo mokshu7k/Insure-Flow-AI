@@ -122,16 +122,33 @@ export default function AdjusterPage() {
 
                         {/* Messages */}
                         <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
-                            {messages.map((msg, i) => (
+                            {messages.map((msg, i) => {
+                                // Format content: ensure → markers are on new lines
+                                const formatContent = (text: string) => {
+                                    return text
+                                        .split('\n')
+                                        .map((line) => {
+                                            const trimmed = line.trim();
+                                            if (trimmed.startsWith('→')) {
+                                                return trimmed;
+                                            }
+                                            return line;
+                                        })
+                                        .join('\n');
+                                };
+                                const formattedContent = formatContent(msg.content);
+                                
+                                return (
                                 <div key={i} className={msg.role === "user" ? "chat-bubble-user" : "chat-bubble-ai"}>
                                     {msg.role === "ai" && (
                                         <div style={{ fontSize: "0.5625rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
                                             Adjuster Agent
                                         </div>
                                     )}
-                                    <div style={{ fontSize: "0.8125rem", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{msg.content}</div>
+                                    <div style={{ fontSize: "0.8125rem", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{formattedContent}</div>
                                 </div>
-                            ))}
+                                );
+                            })}
                             {sending && (
                                 <div className="chat-bubble-ai" style={{ display: "flex", gap: 6, alignItems: "center" }}>
                                     <Loader size={13} style={{ animation: "spin 1s linear infinite" }} />

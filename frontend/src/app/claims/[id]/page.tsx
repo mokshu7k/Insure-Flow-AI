@@ -89,6 +89,29 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [agentSending, setAgentSending] = useState(false);
     const agentBottomRef = useRef<HTMLDivElement>(null);
 
+    // ── Polling for background Gemini extraction ───────────────────────────
+    const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopPolling = useCallback(() => {
+        if (pollTimerRef.current) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+        }
+    }, []);
+
+    const startPollingIfNeeded = useCallback((docs: DocumentResponse[]) => {
+        const hasPending = docs.some((d) => d.validation_status === "pending");
+        if (!hasPending) { stopPolling(); return; }
+        if (pollTimerRef.current) return; // already running
+        pollTimerRef.current = setInterval(async () => {
+            try {
+                const refreshed = await documentService.listForClaim(id);
+                setDocuments(refreshed);
+                if (!refreshed.some((d) => d.validation_status === "pending")) stopPolling();
+            } catch { /* ignore transient poll errors */ }
+        }, 3000);
+    }, [id, stopPolling]);
+
     const load = async () => {
         setLoading(true);
         try {
@@ -98,6 +121,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
             ]);
             setClaim(c);
             setDocuments(docs);
+            startPollingIfNeeded(docs);
             // Fetch existing fraud assessment (null if none yet)
             const a = await fraudService.getAssessment(id);
             if (a) setAssessment(a);
@@ -147,6 +171,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     }, [agentSending, id]);
 
     useEffect(() => { load(); }, [id]);
+    // Stop polling when component unmounts (navigation away from the page)
+    useEffect(() => () => { stopPolling(); }, [stopPolling]);
 
     const runFraud = async () => {
         setFraudLoading(true);
@@ -180,7 +206,11 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
         setUploading(true);
         try {
             const doc = await documentService.upload(id, uploadFile, uploadType);
-            setDocuments((prev) => [doc, ...prev]);
+            setDocuments((prev) => {
+                const next = [doc, ...prev];
+                startPollingIfNeeded(next);
+                return next;
+            });
             setUploadFile(null);
         } catch {
             setError("Upload failed");
@@ -300,22 +330,59 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                 {doc.original_filename && <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>{doc.original_filename}</div>}
                                             </div>
                                             {doc.requires_manual_review && <AlertTriangle size={13} color="var(--amber)" />}
-                                            {doc.extracted_data && Object.keys(doc.extracted_data).length > 0 && (
-                                                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>
+                                            {doc.validation_status === "pending" ? (
+                                                <Loader2 size={12} color="var(--blue)" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                                            ) : doc.extracted_data && Object.keys(doc.extracted_data).length > 0 ? (
+                                                <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--green)" }}>
                                                     {doc.extraction_confidence ? `${(doc.extraction_confidence * 100).toFixed(0)}%` : "✓"}
                                                 </span>
-                                            )}
+                                            ) : null}
                                         </button>
-                                        {selectedDocId === doc.id.toString() && doc.extracted_data && Object.keys(doc.extracted_data).length > 0 && (
+                                        {selectedDocId === doc.id.toString() && (
                                             <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
-                                                <EditableExtractedData
-                                                    document={doc}
-                                                    onUpdate={(updated) => {
-                                                        setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-                                                        setSelectedDocId(null);
-                                                    }}
-                                                    onError={(error) => setDocError(error)}
-                                                />
+                                                {doc.validation_status === "pending" ? (
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--blue)", fontSize: "0.75rem" }}>
+                                                        <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                                                        AI extraction in progress — this usually takes 20–40 s…
+                                                    </div>
+                                                ) : doc.validation_status === "extraction_failed" ? (
+                                                    <div>
+                                                        <div style={{ fontSize: "0.75rem", color: "var(--crimson)", marginBottom: 8 }}>
+                                                            Automated extraction failed — add data manually below.
+                                                        </div>
+                                                        <EditableExtractedData
+                                                            document={doc}
+                                                            onUpdate={(updated) => {
+                                                                setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+                                                                setSelectedDocId(null);
+                                                            }}
+                                                            onError={(error) => setDocError(error)}
+                                                        />
+                                                    </div>
+                                                ) : doc.extracted_data && Object.keys(doc.extracted_data).length > 0 ? (
+                                                    <EditableExtractedData
+                                                        document={doc}
+                                                        onUpdate={(updated) => {
+                                                            setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+                                                            setSelectedDocId(null);
+                                                        }}
+                                                        onError={(error) => setDocError(error)}
+                                                    />
+                                                ) : (
+                                                    <div>
+                                                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 8 }}>
+                                                            No data extracted — add fields manually.
+                                                        </div>
+                                                        <EditableExtractedData
+                                                            document={doc}
+                                                            onUpdate={(updated) => {
+                                                                setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+                                                                setSelectedDocId(null);
+                                                            }}
+                                                            onError={(error) => setDocError(error)}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -475,7 +542,23 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                     Ask a follow-up question about this report
                                                 </div>
                                             )}
-                                            {agentMessages.map((m, i) => (
+                                            {agentMessages.map((m, i) => {
+                                                // Format content: ensure → markers are on new lines
+                                                const formatContent = (text: string) => {
+                                                    return text
+                                                        .split('\n')
+                                                        .map((line) => {
+                                                            const trimmed = line.trim();
+                                                            if (trimmed.startsWith('→')) {
+                                                                return trimmed;
+                                                            }
+                                                            return line;
+                                                        })
+                                                        .join('\n');
+                                                };
+                                                const formattedContent = formatContent(m.content);
+                                                
+                                                return (
                                                 <div key={i} style={{
                                                     alignSelf: m.role === "user" ? "flex-end" : "flex-start",
                                                     maxWidth: "92%",
@@ -489,9 +572,10 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                     whiteSpace: "pre-wrap",
                                                     wordBreak: "break-word",
                                                 }}>
-                                                    {m.content}
+                                                    {formattedContent}
                                                 </div>
-                                            ))}
+                                                );
+                                            })}
                                             {agentSending && (
                                                 <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)", fontSize: "0.75rem", alignSelf: "flex-start" }}>
                                                     <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />

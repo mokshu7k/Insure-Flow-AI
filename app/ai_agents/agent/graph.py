@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -175,11 +176,17 @@ There is NO markdown renderer. Follow these rules exactly:
 
   3. Use these unicode bullets for lists:
      •  general items
-     →  steps / actions the user should take
+     →  steps / actions the user should take (EACH ON A NEW LINE)
      ✓  positive / approved / complete
      ✗  negative / rejected / flagged
 
-  4. Separate sections with a blank line (one empty line between sections).
+  4. IMPORTANT: When listing steps (→), each step MUST be on its own line.
+     Bad:  → Step 1 → Step 2 → Step 3
+     Good: → Step 1
+           → Step 2
+           → Step 3
+
+  5. Separate sections with a blank line (one empty line between sections).
      Do NOT use --- or === or *** as dividers.
 
   5. For claim lists, use aligned plain-text columns:
@@ -274,6 +281,22 @@ def _content_str(content: Any) -> str:
                 parts.append(str(block))
         return " ".join(p for p in parts if p)
     return str(content) if content is not None else ""
+
+
+def _sanitize_response(text: str) -> str:
+    """Remove Thinking markers and cleanup response text from Gemini."""
+    # Remove markdown code fences
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    # Remove [Thinking: ...] markers
+    text = re.sub(r'\[?Thinking[:\s]*[^\]]*\]?', '', text)
+    # Remove <thinking>...</thinking> tags
+    text = re.sub(r'<thinking>[\s\S]*?</thinking>', '', text)
+    # Remove special unicode characters that might appear as control chars
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Clean up multiple spaces/newlines
+    text = re.sub(r'\n\s*\n', '\n', text)
+    text = re.sub(r'  +', ' ', text)
+    return text.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -594,11 +617,16 @@ async def synthesizer_node(state: AgentState) -> dict:
         llm = _get_llm(temperature=0.4)
         messages = [SystemMessage(content=synth_system)] + recent_messages
         response: AIMessage = await llm.ainvoke(messages)
-        reply_preview = _content_str(response.content)[:200]
+        
+        # Sanitize response to remove Thinking markers and special chars
+        clean_content = _sanitize_response(_content_str(response.content))
+        clean_response = AIMessage(content=clean_content)
+        
+        reply_preview = clean_content[:200]
         logger.info("synthesizer_node: Gemini reply preview: %s", reply_preview)
 
         return {
-            "messages": [response],
+            "messages": [clean_response],
             "intent": "synthesized",
         }
 

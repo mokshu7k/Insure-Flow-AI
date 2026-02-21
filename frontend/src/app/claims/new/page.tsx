@@ -1,15 +1,18 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { CommandLayout } from "@/components/layout/CommandLayout";
 import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
+import { complianceService } from "@/services/complianceService";
 import api from "@/services/api";
+import { EditableExtractedData } from "@/components/ui/EditableExtractedData";
 import type { ClaimType, DocumentResponse, DocumentType } from "@/types";
 import {
     Heart, Car, ReceiptText, Upload, X, CheckCircle2,
     ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader,
+    Shield, AlertCircle,
 } from "lucide-react";
 
 // ── Document config per claim type ────────────────────────────────────────────
@@ -46,7 +49,7 @@ const DOC_CONFIG: Record<ClaimType, DocSpec[]> = {
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 function StepBar({ current }: { current: number }) {
-    const steps = ["Type", "Documents", "Review", "Confirm"];
+    const steps = ["Consent", "Type", "Documents", "Review", "Confirm"];
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 28 }}>
             {steps.map((label, i) => {
@@ -164,7 +167,16 @@ function WizardContent() {
     const router = useRouter();
     const [step, setStep] = useState(1);
 
-    // Step 1
+    // Step 1 — Consent
+    const [consentData, setConsentData] = useState(false);       // data processing
+    const [consentTerms, setConsentTerms] = useState(false);     // T&C
+    const [consentLoading, setConsentLoading] = useState(false);
+    const [consentError, setConsentError] = useState<string | null>(null);
+    const [consentChecking, setConsentChecking] = useState(false); // always show consent step (not checking)
+
+    // Removed: Auto-skip consent. Now shown every time user files a claim.
+
+    // Step 2
     const [claimType, setClaimType] = useState<ClaimType | null>(null);
 
     // Step 2
@@ -224,8 +236,46 @@ function WizardContent() {
     };
     const [claimId, setClaimId] = useState<string | null>(null);
     const [uploadedDocs, setUploadedDocs] = useState<DocumentResponse[]>([]);
+    const [extracting, setExtracting] = useState(false); // true while background tasks are pending
 
-    // Step 4
+    // ── Polling for background Gemini extraction on the wizard ────────────────
+    const wizardPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopWizardPoll = useCallback(() => {
+        if (wizardPollRef.current) { clearInterval(wizardPollRef.current); wizardPollRef.current = null; }
+    }, []);
+
+    useEffect(() => {
+        // Start polling when we hit step 4 and any doc is still pending
+        if (step !== 4 || !claimId) return;
+        const hasPending = uploadedDocs.some((d) => d.validation_status === "pending");
+        if (!hasPending) { setExtracting(false); return; }
+
+        setExtracting(true);
+        if (wizardPollRef.current) return; // already running
+
+        wizardPollRef.current = setInterval(async () => {
+            try {
+                const refreshed = await documentService.listForClaim(claimId);
+                setUploadedDocs(refreshed);
+                const stillPending = refreshed.some((d) => d.validation_status === "pending");
+                if (!stillPending) {
+                    setExtracting(false);
+                    stopWizardPoll();
+                    // Pre-fill amount now that extraction is done
+                    const extracted = getExtractedAmount(refreshed);
+                    if (extracted) setClaimAmount(extracted);
+                }
+            } catch { /* ignore transient poll errors */ }
+        }, 2000);
+
+        return () => stopWizardPoll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [step, claimId, uploadedDocs.map(d => d.validation_status).join(",")]);
+
+    useEffect(() => () => stopWizardPoll(), [stopWizardPoll]);
+
+    // Step 5
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
@@ -254,7 +304,21 @@ function WizardContent() {
         return "";
     }
 
-    // ── Step 2 → 3: create claim + upload docs ────────────────────────────────
+    // ── Step 1: record consent ────────────────────────────────────────────────
+    async function handleGiveConsent() {
+        setConsentError(null);
+        setConsentLoading(true);
+        try {
+            await complianceService.giveConsent();
+            setStep(2);
+        } catch {
+            setConsentError("Failed to record consent — please try again.");
+        } finally {
+            setConsentLoading(false);
+        }
+    }
+
+    // ── Step 3 → 4: create claim + upload docs ────────────────────────────────
     async function handleUpload() {
         if (!claimType) return;
         const missingRequired = specs
@@ -292,7 +356,7 @@ function WizardContent() {
             const extracted = getExtractedAmount(results);
             if (extracted) setClaimAmount(extracted);
 
-            setStep(3);
+            setStep(4);
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Upload failed";
             setUploadError(msg);
@@ -351,14 +415,102 @@ function WizardContent() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <FileText size={15} color="var(--text-muted)" />
                 <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>New Claim</span>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Step {step} of 4</span>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Step {step} of 5</span>
             </div>
         }>
             <div style={{ maxWidth: 600, margin: "0 auto", padding: "24px 0" }}>
                 <StepBar current={step} />
 
-                {/* ── Step 1: Choose type ─────────────────────────────────── */}
-                {step === 1 && (
+                {/* ── Step 1: Consent ─────────────────────────────────────── */}
+                {step === 1 && !consentChecking && (
+                    <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                            <Shield size={20} color="var(--blue)" />
+                            <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Data consent &amp; conditions</h2>
+                        </div>
+                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", lineHeight: 1.6, marginBottom: 20 }}>
+                            Before filing a claim, please read and accept how InsureFlow&nbsp;AI handles your personal
+                            and medical information.
+                        </p>
+
+                        {/* Info box */}
+                        <div style={{
+                            border: "1px solid var(--border)", borderRadius: 8,
+                            padding: "14px 16px", background: "var(--bg-surface)", marginBottom: 20,
+                            fontSize: "0.8125rem", lineHeight: 1.7,
+                        }}>
+                            <p style={{ fontWeight: 600, marginBottom: 8 }}>What data we collect &amp; why</p>
+                            <ul style={{ paddingLeft: 18, color: "var(--text-muted)", margin: 0 }}>
+                                <li>Personal identifiers (name, ID proof) — to verify your identity</li>
+                                <li>Medical &amp; vehicle documents — to assess and process your claim</li>
+                                <li>Policy details — to validate coverage eligibility</li>
+                                <li>Device / IP information — for fraud prevention</li>
+                            </ul>
+                            <p style={{ marginTop: 10, color: "var(--text-muted)" }}>
+                                Data is retained for the duration required by insurance regulations and deleted upon
+                                a valid account-deletion request. We never sell your data to third parties.
+                            </p>
+                        </div>
+
+                        {/* Checkboxes */}
+                        <label style={{
+                            display: "flex", alignItems: "flex-start", gap: 10,
+                            marginBottom: 14, cursor: "pointer", fontSize: "0.8125rem",
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={consentData}
+                                onChange={(e) => setConsentData(e.target.checked)}
+                                style={{ marginTop: 2, accentColor: "var(--blue)", width: 15, height: 15, flexShrink: 0 }}
+                            />
+                            <span>
+                                I consent to InsureFlow&nbsp;AI collecting, storing, and processing my personal,
+                                medical, and vehicle data solely for the purpose of evaluating and settling this
+                                insurance claim.
+                            </span>
+                        </label>
+
+                        <label style={{
+                            display: "flex", alignItems: "flex-start", gap: 10,
+                            marginBottom: 24, cursor: "pointer", fontSize: "0.8125rem",
+                        }}>
+                            <input
+                                type="checkbox"
+                                checked={consentTerms}
+                                onChange={(e) => setConsentTerms(e.target.checked)}
+                                style={{ marginTop: 2, accentColor: "var(--blue)", width: 15, height: 15, flexShrink: 0 }}
+                            />
+                            <span>
+                                I have read and agree to the{" "}
+                                <a href="#" style={{ color: "var(--blue)" }}>Terms &amp; Conditions</a>{" "}and{" "}
+                                <a href="#" style={{ color: "var(--blue)" }}>Privacy Policy</a>.
+                            </span>
+                        </label>
+
+                        {consentError && (
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--red, #ef4444)", fontSize: "0.75rem", marginBottom: 12 }}>
+                                <AlertCircle size={13} />
+                                {consentError}
+                            </div>
+                        )}
+
+                        <button
+                            className="btn btn-primary"
+                            disabled={!consentData || !consentTerms || consentLoading}
+                            onClick={handleGiveConsent}
+                            style={{ width: "100%" }}
+                        >
+                            {consentLoading ? (
+                                <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Recording consent…</>
+                            ) : (
+                                <>Accept &amp; Continue <ChevronRight size={14} /></>
+                            )}
+                        </button>
+                    </div>
+                )}
+
+                {/* ── Step 2: Choose type ─────────────────────────────────── */}
+                {step === 2 && (
                     <div>
                         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>What type of claim?</h2>
                         <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
@@ -392,7 +544,7 @@ function WizardContent() {
                         <button
                             className="btn btn-primary"
                             disabled={!claimType}
-                            onClick={() => setStep(2)}
+                            onClick={() => setStep(3)}
                             style={{ width: "100%" }}
                         >
                             Continue <ChevronRight size={14} />
@@ -400,8 +552,8 @@ function WizardContent() {
                     </div>
                 )}
 
-                {/* ── Step 2: Policy + documents ──────────────────────────── */}
-                {step === 2 && claimType && (
+                {/* ── Step 3: Policy + documents ──────────────────────────── */}
+                {step === 3 && claimType && (
                     <div>
                         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>
                             {TYPE_META[claimType].title} Claim — Documents
@@ -449,7 +601,7 @@ function WizardContent() {
                         )}
 
                         <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn btn-ghost" onClick={() => setStep(1)}>
+                            <button className="btn btn-ghost" onClick={() => setStep(2)}>
                                 <ChevronLeft size={14} /> Back
                             </button>
                             <button
@@ -468,12 +620,12 @@ function WizardContent() {
                     </div>
                 )}
 
-                {/* ── Step 3: OCR review ──────────────────────────────────── */}
-                {step === 3 && (
+                {/* ── Step 4: OCR review ──────────────────────────────────── */}
+                {step === 4 && (
                     <div>
                         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>Review extracted data</h2>
                         <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
-                            Documents processed. Verify or correct the details below.
+                            {extracting ? "AI is reading your documents — this takes about 20–40 s…" : "Documents processed. Verify or correct the details below."}
                         </p>
 
                         {/* OCR extractions */}
@@ -484,10 +636,14 @@ function WizardContent() {
                                         border: "1px solid var(--border)", borderRadius: 6,
                                         padding: "10px 14px", marginBottom: 8, background: "var(--bg-surface)",
                                     }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
                                             <FileText size={13} color="var(--text-muted)" />
                                             <span style={{ fontSize: "0.75rem", fontWeight: 500 }}>{doc.original_filename ?? doc.document_type}</span>
-                                            {doc.extraction_confidence !== null && (
+                                            {doc.validation_status === "pending" ? (
+                                                <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.625rem", color: "var(--blue)", fontFamily: "var(--font-mono)" }}>
+                                                    <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> extracting…
+                                                </span>
+                                            ) : doc.extraction_confidence !== null ? (
                                                 <span style={{
                                                     marginLeft: "auto", fontSize: "0.625rem",
                                                     color: (doc.extraction_confidence ?? 0) >= 0.7 ? "var(--green)" : "var(--amber)",
@@ -495,28 +651,20 @@ function WizardContent() {
                                                 }}>
                                                     {Math.round((doc.extraction_confidence ?? 0) * 100)}% confidence
                                                 </span>
-                                            )}
+                                            ) : null}
                                         </div>
-                                        {doc.extracted_data && Object.keys(doc.extracted_data).length > 0 ? (
-                                            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "2px 12px" }}>
-                                                {Object.entries(doc.extracted_data).slice(0, 8).map(([k, v]) => {
-                                                    const display = (
-                                                        typeof v === "object" && v !== null
-                                                            ? (v as Record<string, unknown>).text ?? JSON.stringify(v)
-                                                            : v
-                                                    );
-                                                    return (
-                                                        <div key={k} style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>
-                                                            <span style={{ textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</span>:{" "}
-                                                            <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                                                                {String(display).slice(0, 40)}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
+                                        {doc.validation_status === "pending" ? (
+                                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                                {[80, 60, 70].map((w, i) => (
+                                                    <div key={i} className="skeleton" style={{ height: 10, width: `${w}%` }} />
+                                                ))}
                                             </div>
                                         ) : (
-                                            <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>No structured data extracted</span>
+                                            <EditableExtractedData
+                                                document={doc}
+                                                onUpdate={(updated) => setUploadedDocs((prev) => prev.map((d) => d.id === updated.id ? updated : d))}
+                                                onError={() => {}}
+                                            />
                                         )}
                                     </div>
                                 ))}
@@ -586,23 +734,27 @@ function WizardContent() {
                         </div>
 
                         <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn btn-ghost" onClick={() => setStep(2)}>
+                            <button className="btn btn-ghost" onClick={() => setStep(3)}>
                                 <ChevronLeft size={14} /> Back
                             </button>
                             <button
                                 className="btn btn-primary"
-                                disabled={!claimAmount}
-                                onClick={() => setStep(4)}
+                                disabled={!claimAmount || extracting}
+                                onClick={() => setStep(5)}
                                 style={{ flex: 1 }}
                             >
-                                Review & Confirm <ChevronRight size={14} />
+                                {extracting ? (
+                                    <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Extracting…</>
+                                ) : (
+                                    <>Review &amp; Confirm <ChevronRight size={14} /></>
+                                )}
                             </button>
                         </div>
                     </div>
                 )}
 
-                {/* ── Step 4: Confirm ─────────────────────────────────────── */}
-                {step === 4 && claimType && (
+                {/* ── Step 5: Confirm ─────────────────────────────────────── */}
+                {step === 5 && claimType && (
                     <div>
                         <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>Confirm your claim</h2>
                         <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
@@ -638,7 +790,7 @@ function WizardContent() {
                         )}
 
                         <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn btn-ghost" onClick={() => setStep(3)}>
+                            <button className="btn btn-ghost" onClick={() => setStep(4)}>
                                 <ChevronLeft size={14} /> Back
                             </button>
                             <button

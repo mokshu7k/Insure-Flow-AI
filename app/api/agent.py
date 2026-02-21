@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -302,7 +303,13 @@ async def send_message(
     for m in reversed(result_state.get("messages", [])):
         role = getattr(m, "type", None) or m.get("role", "") if isinstance(m, dict) else getattr(m, "type", "")
         if role in ("ai", "assistant"):
-            last_reply = _content_str(getattr(m, "content", m.get("content", "") if isinstance(m, dict) else ""))
+            raw_reply = _content_str(getattr(m, "content", m.get("content", "") if isinstance(m, dict) else ""))
+            # Sanitize: remove Thinking markers and special characters
+            last_reply = re.sub(r'\[?Thinking[:\s]*[^\]]*\]?', '', raw_reply)  # Remove [Thinking] markers
+            last_reply = re.sub(r'<thinking>[\s\S]*?</thinking>', '', last_reply)  # Remove <thinking> tags
+            last_reply = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', last_reply)  # Remove control chars
+            last_reply = re.sub(r'\n\s*\n', '\n', last_reply)  # Clean newlines
+            last_reply = last_reply.strip()
             break
 
     return AgentMessageResponse(
