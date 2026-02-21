@@ -117,7 +117,8 @@ async def update_claim(
 
 
 async def update_claim_status(
-    claim_id: str, new_status: str, actor_id: str, role: str, db: AsyncSession
+    claim_id: str, new_status: str, actor_id: str, role: str, db: AsyncSession,
+    adjuster_notes: str | None = None,
 ) -> Claim:
     claim = await get_claim(claim_id, actor_id, role, db)
     allowed = ClaimStatus.TRANSITIONS.get(claim.status, set())
@@ -128,13 +129,15 @@ async def update_claim_status(
         )
     old_status = claim.status
     claim.status = new_status
+    if adjuster_notes is not None:
+        claim.adjuster_notes = adjuster_notes
     await log_action(
         db=db,
         action_type=AuditAction.CLAIM_STATUS_CHANGED,
         entity_type="CLAIM",
         actor_id=actor_id,
         entity_id=claim_id,
-        metadata={"from": old_status, "to": new_status},
+        metadata={"from": old_status, "to": new_status, **(({"notes": adjuster_notes}) if adjuster_notes else {})},
     )
     await db.commit()
     await db.refresh(claim)

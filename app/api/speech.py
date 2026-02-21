@@ -9,7 +9,6 @@ Strategy:
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -64,12 +63,11 @@ async def transcribe_audio(
     mime = mime_map.get(raw_mime, "audio/webm")
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.GCP_API_KEY)
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        from google import genai
+        from google.genai import types as _genai_types
+        client = genai.Client(api_key=settings.GCP_API_KEY)
 
-        blob_b64 = base64.standard_b64encode(content).decode()
-        audio_part = {"inline_data": {"mime_type": mime, "data": blob_b64}}
+        audio_part = _genai_types.Part.from_bytes(data=content, mime_type=mime)
         prompt = (
             "Transcribe the speech in this audio recording exactly as spoken. "
             "Return ONLY the transcribed text with no labels or commentary. "
@@ -77,7 +75,7 @@ async def transcribe_audio(
         )
 
         def _call() -> str:
-            return (model.generate_content([audio_part, prompt]).text or "").strip()
+            return (client.models.generate_content(model="gemini-2.5-flash", contents=[audio_part, prompt]).text or "").strip()
 
         loop = asyncio.get_running_loop()
         text = await loop.run_in_executor(None, _call)

@@ -7,7 +7,7 @@ import {
     ChatSessionSummary,
     ChatMessage as ApiChatMessage,
 } from "@/services/agentService";
-import { MessageSquare, Send, Loader2, Plus, Bot, User, Trash2, Check, X, Pencil } from "lucide-react";
+import { MessageSquare, Send, Loader2, Plus, Bot, User, Trash2, Check, X, Pencil, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 interface Message {
     role: "user" | "agent";
@@ -188,44 +188,56 @@ function ChatContent() {
     };
 
     const isEmpty = messages.length === 0;
+    const [sidebarOpen, setSidebarOpen] = useState(true);
 
     return (
         <CommandLayout
             header={
                 <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
-                    <MessageSquare size={15} color="var(--text-muted)" />
-                    <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>Assistant</span>
+                    <MessageSquare size={16} color="var(--blue)" />
+                    <span style={{ fontSize: "1rem", fontWeight: 600 }}>Assistant</span>
                     {activeSessionId && (
                         <span style={{
-                            fontFamily: "var(--font-mono)", fontSize: "0.6125rem",
+                            fontFamily: "var(--font-mono)", fontSize: "0.6875rem",
                             color: "var(--text-muted)", background: "var(--bg-surface)",
-                            border: "1px solid var(--border)", borderRadius: 3, padding: "1px 6px",
+                            border: "1px solid var(--border)", borderRadius: 3, padding: "2px 8px",
                         }}>
                             {activeSessionId.slice(0, 8)}
                         </span>
                     )}
+                    <div style={{ marginLeft: "auto" }}>
+                        <button
+                            onClick={() => setSidebarOpen((o) => !o)}
+                            className="btn btn-ghost"
+                            title={sidebarOpen ? "Hide sessions" : "Show sessions"}
+                            style={{ padding: "4px 8px" }}
+                        >
+                            {sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
+                        </button>
+                    </div>
                 </div>
             }
         >
             {/* Two-column layout inside the page */}
-            <div style={{ display: "flex", height: "calc(100vh - 49px)" }}>
+            <div style={{ display: "flex", height: "calc(100vh - 52px)" }}>
 
                 {/* â”€â”€â”€ Sidebar â”€â”€â”€ */}
-                <aside style={{
-                    width: 240, flexShrink: 0,
+                {sidebarOpen && (<aside style={{
+                    width: 260, flexShrink: 0,
                     borderRight: "1px solid var(--border)",
                     display: "flex", flexDirection: "column",
                     background: "var(--bg-base)",
                     overflowY: "auto",
+                    transition: "width 200ms ease",
                 }}>
                     {/* New chat button */}
-                    <div style={{ padding: "10px 10px 6px" }}>
+                    <div style={{ padding: "12px 10px 8px" }}>
                         <button
                             className="btn btn-primary"
                             onClick={handleNewChat}
-                            style={{ width: "100%", gap: 6, fontSize: "0.8125rem" }}
+                            style={{ width: "100%", gap: 6, fontSize: "0.875rem", padding: "8px 14px" }}
                         >
-                            <Plus size={13} /> New chat
+                            <Plus size={14} /> New chat
                         </button>
                     </div>
 
@@ -259,38 +271,38 @@ function ChatContent() {
                             ))
                         )}
                     </div>
-                </aside>
+                </aside>)}
 
-                {/* â”€â”€â”€ Chat panel â”€â”€â”€ */}
+                {/* Chat panel */}
                 <div style={{
                     flex: 1, display: "flex", flexDirection: "column",
-                    maxWidth: 720, margin: "0 auto", width: "100%",
-                    padding: "0 20px",
+                    maxWidth: 800, margin: "0 auto", width: "100%",
+                    padding: "0 24px", minWidth: 0,
                 }}>
                     {/* Message thread */}
-                    <div style={{ flex: 1, overflowY: "auto", padding: "20px 0" }}>
+                    <div style={{ flex: 1, overflowY: "auto", padding: "24px 0" }}>
                         {isEmpty ? (
                             <div style={{ textAlign: "center", padding: "60px 20px" }}>
                                 <div style={{
-                                    width: 52, height: 52, borderRadius: "50%",
+                                    width: 56, height: 56, borderRadius: "50%",
                                     background: "var(--blue-bg, rgba(59,130,246,0.1))",
                                     border: "1px solid var(--blue-border, rgba(59,130,246,0.2))",
                                     display: "flex", alignItems: "center", justifyContent: "center",
                                     margin: "0 auto 16px",
                                 }}>
-                                    <Bot size={22} color="var(--blue)" />
+                                    <Bot size={24} color="var(--blue)" />
                                 </div>
-                                <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>InsureFlow Assistant</h2>
-                                <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 28, maxWidth: 380, margin: "0 auto 28px" }}>
+                                <h2 style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: 8 }}>InsureFlow Assistant</h2>
+                                <p style={{ color: "var(--text-muted)", fontSize: "0.9375rem", marginBottom: 32, maxWidth: 420, margin: "0 auto 32px" }}>
                                     Ask me anything about your claims, policy, or the filing process.
                                 </p>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400, margin: "0 auto" }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 420, margin: "0 auto" }}>
                                     {STARTER_PROMPTS.map((p) => (
                                         <button
                                             key={p}
                                             className="btn btn-ghost"
                                             onClick={() => sendMessage(p)}
-                                            style={{ justifyContent: "flex-start", textAlign: "left", fontSize: "0.8125rem" }}
+                                            style={{ justifyContent: "flex-start", textAlign: "left", fontSize: "0.9375rem", padding: "10px 14px" }}
                                         >
                                             {p}
                                         </button>
@@ -298,18 +310,20 @@ function ChatContent() {
                                 </div>
                             </div>
                         ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "0 4px" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 18, padding: "0 4px" }}>
                                 {messages.map((msg, i) => (
                                     <MessageBubble key={i} msg={msg} />
                                 ))}
                                 {loading && (
-                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                         <AgentAvatar />
                                         <div style={{
                                             background: "var(--bg-surface)", border: "1px solid var(--border)",
-                                            borderRadius: "6px 12px 12px 6px", padding: "10px 14px",
-                                            display: "flex", gap: 4, alignItems: "center",
+                                            borderRadius: "6px 14px 14px 6px", padding: "12px 16px",
+                                            display: "flex", gap: 6, alignItems: "center",
                                         }}>
+                                            <Loader2 size={15} className="animate-spin" style={{ color: "var(--text-muted)" }} />
+                                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Thinkingâ€¦</span>
                                             <Loader2 size={13} style={{ animation: "spin 1s linear infinite", color: "var(--text-muted)" }} />
                                             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Thinking…</span>
                                         </div>
@@ -323,9 +337,9 @@ function ChatContent() {
                     {/* Error */}
                     {error && (
                         <div style={{
-                            margin: "0 0 8px 0", padding: "8px 12px",
+                            margin: "0 0 8px 0", padding: "10px 14px",
                             background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)",
-                            borderRadius: 6, fontSize: "0.75rem", color: "var(--red, #ef4444)",
+                            borderRadius: 6, fontSize: "0.8125rem", color: "var(--red, #ef4444)",
                         }}>
                             {error}
                         </div>
@@ -333,8 +347,8 @@ function ChatContent() {
 
                     {/* Input */}
                     <div style={{
-                        borderTop: "1px solid var(--border)", padding: "12px 0 16px",
-                        display: "flex", gap: 8, alignItems: "flex-end",
+                        borderTop: "1px solid var(--border)", padding: "14px 0 18px",
+                        display: "flex", gap: 10, alignItems: "flex-end",
                     }}>
                         <textarea
                             className="input"
@@ -343,7 +357,7 @@ function ChatContent() {
                             onChange={(e) => {
                                 setInput(e.target.value);
                                 e.target.style.height = "auto";
-                                e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+                                e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px";
                             }}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter" && !e.shiftKey) {
@@ -356,16 +370,17 @@ function ChatContent() {
                             style={{
                                 flex: 1, resize: "none", overflowY: "hidden",
                                 fontFamily: "inherit", lineHeight: 1.5,
-                                minHeight: 38,
+                                minHeight: 42, fontSize: "0.9375rem",
+                                padding: "10px 14px",
                             }}
                         />
                         <button
                             className="btn btn-primary"
                             disabled={!input.trim() || loading}
                             onClick={() => sendMessage(input)}
-                            style={{ height: 38, padding: "0 14px", flexShrink: 0 }}
+                            style={{ height: 42, padding: "0 16px", flexShrink: 0 }}
                         >
-                            <Send size={14} />
+                            <Send size={16} />
                         </button>
                     </div>
                 </div>
@@ -403,11 +418,11 @@ function SessionItem({
             onClick={isRenaming ? undefined : onSelect}
             style={{
                 display: "flex", alignItems: "center", gap: 6,
-                padding: "7px 8px", borderRadius: 6,
-                background: isActive ? "var(--bg-surface)" : "transparent",
+                padding: "8px 10px", borderRadius: 6,
+                background: isActive ? "var(--bg-surface)" : hovered ? "var(--bg-hover)" : "transparent",
                 border: isActive ? "1px solid var(--border)" : "1px solid transparent",
                 cursor: "pointer", marginBottom: 2,
-                transition: "background 0.1s",
+                transition: "background 150ms",
             }}
         >
             {isRenaming ? (
@@ -419,9 +434,9 @@ function SessionItem({
                         onKeyDown={onRenameKey}
                         onBlur={onRenameBlur}
                         style={{
-                            flex: 1, fontSize: "0.75rem", background: "var(--bg-base)",
-                            border: "1px solid var(--blue)", borderRadius: 3,
-                            padding: "2px 6px", color: "var(--text-primary)", outline: "none",
+                            flex: 1, fontSize: "0.8125rem", background: "var(--bg-base)",
+                            border: "1px solid var(--blue)", borderRadius: 4,
+                            padding: "3px 8px", color: "var(--text-primary)", outline: "none",
                         }}
                     />
                     <button
@@ -445,13 +460,13 @@ function SessionItem({
                 <>
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
-                            fontSize: "0.75rem", fontWeight: isActive ? 600 : 400,
+                            fontSize: "0.8125rem", fontWeight: isActive ? 600 : 400,
                             color: "var(--text-primary)",
                             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                         }}>
                             {session.title}
                         </div>
-                        <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: 1 }}>
+                        <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: 2 }}>
                             {timeAgo(session.updated_at)}
                         </div>
                     </div>
@@ -485,12 +500,12 @@ function SessionItem({
 function AgentAvatar() {
     return (
         <div style={{
-            width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+            width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
             background: "var(--blue-bg, rgba(59,130,246,0.1))",
             border: "1px solid var(--blue-border, rgba(59,130,246,0.2))",
             display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-            <Bot size={13} color="var(--blue)" />
+            <Bot size={16} color="var(--blue)" />
         </div>
     );
 }
@@ -517,37 +532,37 @@ function MessageBubble({ msg }: { msg: Message }) {
     
     return (
         <div style={{
-            display: "flex", alignItems: "flex-start", gap: 8,
+            display: "flex", alignItems: "flex-start", gap: 10,
             flexDirection: isUser ? "row-reverse" : "row",
         }}>
             {isUser ? (
                 <div style={{
-                    width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                    width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
                     background: "var(--bg-surface)", border: "1px solid var(--border)",
                     display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                    <User size={13} color="var(--text-muted)" />
+                    <User size={15} color="var(--text-muted)" />
                 </div>
             ) : (
                 <AgentAvatar />
             )}
             <div style={{
-                maxWidth: "72%",
+                maxWidth: "75%",
                 background: isUser ? "var(--blue)" : "var(--bg-surface)",
                 color: isUser ? "#fff" : "var(--text-primary)",
                 border: isUser ? "none" : "1px solid var(--border)",
-                borderRadius: isUser ? "12px 6px 6px 12px" : "6px 12px 12px 6px",
-                padding: "10px 14px",
-                fontSize: "0.8125rem",
-                lineHeight: 1.55,
+                borderRadius: isUser ? "14px 6px 6px 14px" : "6px 14px 14px 6px",
+                padding: "12px 16px",
+                fontSize: "0.9375rem",
+                lineHeight: 1.65,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
             }}>
                 {formattedContent}
                 <div style={{
-                    fontSize: "0.6rem",
+                    fontSize: "0.6875rem",
                     color: isUser ? "rgba(255,255,255,0.6)" : "var(--text-muted)",
-                    marginTop: 4, textAlign: "right",
+                    marginTop: 6, textAlign: "right",
                 }}>
                     {msg.timestamp.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                 </div>

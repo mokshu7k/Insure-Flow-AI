@@ -25,7 +25,7 @@ langchain-core
 langchain-google-genai
 
 # Document Extraction — Gemini native multimodal (handles text + scanned PDFs)
-google-generativeai
+google-genai
 langextract
 pypdf
 

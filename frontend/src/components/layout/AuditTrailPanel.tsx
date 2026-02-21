@@ -10,12 +10,18 @@ function formatAction(action: string) {
     return action.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatTime(ts: string) {
-    return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+function formatTime(ts: string | null | undefined) {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatDate(ts: string) {
-    return new Date(ts).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+function formatDate(ts: string | null | undefined) {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 }
 
 export function AuditTrailPanel({ claimId }: AuditTrailPanelProps) {
@@ -43,13 +49,13 @@ export function AuditTrailPanel({ claimId }: AuditTrailPanelProps) {
             display: "flex",
             flexDirection: "column",
             transition: "width 200ms ease",
-            overflow: "hidden",
+            overflow: "visible",
         }}>
             {/* Collapse toggle */}
             <button
                 onClick={() => setCollapsed(!collapsed)}
                 style={{
-                    position: "absolute", left: collapsed ? 8 : -1, top: 52,
+                    position: "absolute", left: collapsed ? 8 : -12, top: 52,
                     background: "var(--bg-surface)",
                     border: "1px solid var(--border)",
                     borderRadius: "50%",

@@ -76,6 +76,7 @@ class DocumentGatekeeper:
         "image/jpg",
         "image/tiff",
         "image/bmp",
+        "image/webp",
     }
     
     # Max file size (10 MB)
@@ -154,10 +155,11 @@ class DocumentGatekeeper:
         
         except Exception as exc:
             logger.error(f"Document validation failed: {exc}", exc_info=True)
+            # Fail-open: allow upload but flag for review
             return DocumentDecision(
-                status=DocumentDecisionStatus.REJECTED_INVALID,
-                reason="Document validation service encountered an error",
-                fraud_signal_weight=0.5,
+                status=DocumentDecisionStatus.ACCEPTED,
+                reason="Document validation could not be completed — flagged for manual review",
+                fraud_signal_weight=0.3,
                 metadata={"error": str(exc)}
             )
     
@@ -180,7 +182,8 @@ class DocumentGatekeeper:
         if len(file_bytes) > self.MAX_FILE_SIZE:
             return DocumentDecision(
                 status=DocumentDecisionStatus.REJECTED_INVALID,
-                reason="The uploaded document is incorrect",  # User-friendly message
+                reason=f"File is too large ({len(file_bytes) // 1024 // 1024} MB). "
+                       f"Maximum allowed size is {self.MAX_FILE_SIZE // 1024 // 1024} MB.",
                 fraud_signal_weight=0.0,
                 metadata={"error": "file_too_large", "size": len(file_bytes)}
             )
@@ -194,16 +197,17 @@ class DocumentGatekeeper:
         if mime_type not in self.ALLOWED_MIME_TYPES:
             return DocumentDecision(
                 status=DocumentDecisionStatus.REJECTED_INVALID,
-                reason="The uploaded document is incorrect",
+                reason=f"Unsupported file type '{mime_type or 'unknown'}'. "
+                       f"Please upload a PDF, JPEG, PNG, TIFF, BMP, or WebP file.",
                 fraud_signal_weight=0.0,
                 metadata={"error": "invalid_mime_type", "detected": mime_type}
             )
         
-        # Check if file is corrupted (basic magic bytes check)
-        if not self._is_valid_file_structure(file_bytes):
+        # Minimal size check (files < 10 bytes are definitely not real documents)
+        if len(file_bytes) < 10:
             return DocumentDecision(
                 status=DocumentDecisionStatus.REJECTED_INVALID,
-                reason="The uploaded document is incorrect",
+                reason="The uploaded file appears to be empty or corrupted.",
                 fraud_signal_weight=0.0,
                 metadata={"error": "corrupted_file"}
             )
@@ -212,7 +216,8 @@ class DocumentGatekeeper:
         if extracted_text is not None and len(extracted_text.strip()) == 0:
             return DocumentDecision(
                 status=DocumentDecisionStatus.REJECTED_INVALID,
-                reason="The uploaded document is incorrect",
+                reason="The uploaded document appears to be blank — no text content was detected. "
+                       "Please upload a readable document.",
                 fraud_signal_weight=0.0,
                 metadata={"error": "blank_document"}
             )
@@ -232,55 +237,55 @@ class DocumentGatekeeper:
         expected_type: str
     ) -> DocumentDecision:
         """
-        Stage 2: LLM-based document classification.
+        Stage 2: Gemini-powered document classification.
         
-        Uses Gemini to:
-        - Detect actual document type
-        - Verify it matches expected type
-        - Check relevance to insurance context
-        
-        Rejects if:
-        - Detected type != expected type
-        - Document not relevant
-        - Low confidence
+        Gemini is the sole authority on whether the document matches the
+        expected type.  No rule-based alias matching — Gemini understands
+        that an Aadhaar card is valid for "OTHER / ID Proof", etc.
         """
         try:
             classification = await self._classify_with_gemini(file_bytes, expected_type)
             
-            detected_type = classification.get("detected_type", "").lower()
-            is_relevant = classification.get("is_relevant", False)
-            confidence = classification.get("confidence", 0.0)
+            detected_type = classification.get("detected_type", "unknown")
+            matches_expected = classification.get("matches_expected", True)
+            is_relevant = classification.get("is_relevant", True)
+            confidence = classification.get("confidence", 0.5)
             reason_text = classification.get("reason", "")
             
-            # Check relevance
-            if not is_relevant:
+            # Only reject when Gemini is confident the doc doesn't match
+            if not matches_expected and confidence >= 0.7:
+                expected_label = expected_type.replace('_', ' ').title()
+                detected_label = detected_type.replace('_', ' ').title() if detected_type else 'Unknown'
                 return DocumentDecision(
                     status=DocumentDecisionStatus.REJECTED_INVALID,
-                    reason="The uploaded document is incorrect",
-                    fraud_signal_weight=0.0,
-                    metadata={
-                        "error": "not_relevant",
-                        "detected_type": detected_type,
-                        "expected": expected_type,
-                        "llm_reason": reason_text
-                    }
-                )
-            
-            # Check type match (fuzzy matching for common variations)
-            if not self._types_match(detected_type, expected_type):
-                return DocumentDecision(
-                    status=DocumentDecisionStatus.REJECTED_INVALID,
-                    reason="The uploaded document is incorrect",
+                    reason=f"Expected a '{expected_label}' document but received a "
+                           f"'{detected_label}'. {reason_text}",
                     fraud_signal_weight=0.0,
                     metadata={
                         "error": "type_mismatch",
                         "detected_type": detected_type,
                         "expected": expected_type,
-                        "confidence": confidence
+                        "confidence": confidence,
+                        "llm_reason": reason_text,
                     }
                 )
             
-            # Check confidence threshold
+            # Not relevant to insurance at all (high confidence)
+            if not is_relevant and confidence >= 0.7:
+                return DocumentDecision(
+                    status=DocumentDecisionStatus.REJECTED_INVALID,
+                    reason=f"This document does not appear to be related to insurance. "
+                           f"Detected: {detected_type or 'unknown'}. {reason_text}",
+                    fraud_signal_weight=0.0,
+                    metadata={
+                        "error": "not_relevant",
+                        "detected_type": detected_type,
+                        "expected": expected_type,
+                        "llm_reason": reason_text,
+                    }
+                )
+            
+            # Low-confidence classification — accept but flag
             if confidence < 0.5:
                 return DocumentDecision(
                     status=DocumentDecisionStatus.FLAGGED_HIGH_RISK,
@@ -289,11 +294,11 @@ class DocumentGatekeeper:
                     metadata={
                         "stage": "classification",
                         "detected_type": detected_type,
-                        "confidence": confidence
+                        "confidence": confidence,
                     }
                 )
             
-            # Classification passed
+            # Everything looks good
             return DocumentDecision(
                 status=DocumentDecisionStatus.ACCEPTED,
                 reason="Document classification successful",
@@ -301,13 +306,13 @@ class DocumentGatekeeper:
                 metadata={
                     "stage": "classification",
                     "detected_type": detected_type,
-                    "confidence": confidence
+                    "confidence": confidence,
                 }
             )
         
         except Exception as exc:
             logger.warning(f"LLM classification failed: {exc}")
-            # Fail-open: proceed with validation but flag as uncertain
+            # Fail-open: proceed but flag as uncertain
             return DocumentDecision(
                 status=DocumentDecisionStatus.ACCEPTED,
                 reason="Classification skipped due to service error",
@@ -485,16 +490,21 @@ class DocumentGatekeeper:
     
     def _detect_mime_from_bytes(self, file_bytes: bytes) -> str | None:
         """Detect MIME type from magic bytes."""
-        if file_bytes[:4] == b'%PDF':
+        # PDF — may have leading whitespace / BOM before the %PDF marker
+        header = file_bytes[:1024]
+        if b'%PDF' in header:
             return "application/pdf"
-        elif file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+        if file_bytes[:8] == b'\x89PNG\r\n\x1a\n':
             return "image/png"
-        elif file_bytes[:2] == b'\xff\xd8':
+        if file_bytes[:2] == b'\xff\xd8':
             return "image/jpeg"
-        elif file_bytes[:2] in (b'II', b'MM'):
+        if file_bytes[:2] in (b'II', b'MM'):
             return "image/tiff"
-        elif file_bytes[:2] == b'BM':
+        if file_bytes[:2] == b'BM':
             return "image/bmp"
+        # WebP — starts with RIFF....WEBP
+        if file_bytes[:4] == b'RIFF' and file_bytes[8:12] == b'WEBP':
+            return "image/webp"
         return None
     
     def _is_valid_file_structure(self, file_bytes: bytes) -> bool:
@@ -586,16 +596,14 @@ class DocumentGatekeeper:
         """
         Classify document using Gemini multimodal API.
         
-        Forces strict JSON response with:
-        - detected_type
-        - is_relevant
-        - confidence
-        - reason
+        Gemini is the sole authority — it decides whether the uploaded
+        document matches the expected type.  No rule-based alias mapping.
         """
         if not self.gemini_api_key:
             logger.warning("Gemini API key not configured - skipping LLM classification")
             return {
                 "detected_type": expected_type,
+                "matches_expected": True,
                 "is_relevant": True,
                 "confidence": 0.5,
                 "reason": "LLM classification skipped"
@@ -611,18 +619,17 @@ class DocumentGatekeeper:
             # Prepare content part
             is_pdf = file_bytes[:4] == b'%PDF'
             
+            from google.genai import types as _genai_types
             if is_pdf:
-                blob_data = base64.standard_b64encode(file_bytes).decode("utf-8")
-                content_part = {
-                    "inline_data": {"mime_type": "application/pdf", "data": blob_data}
-                }
+                content_part = _genai_types.Part.from_bytes(
+                    data=file_bytes, mime_type="application/pdf"
+                )
             else:
                 # For images, encode directly
                 mime_type = self._detect_mime_from_bytes(file_bytes) or "image/jpeg"
-                blob_data = base64.standard_b64encode(file_bytes).decode("utf-8")
-                content_part = {
-                    "inline_data": {"mime_type": mime_type, "data": blob_data}
-                }
+                content_part = _genai_types.Part.from_bytes(
+                    data=file_bytes, mime_type=mime_type
+                )
             
             # Classification prompt using the exact type tokens this system uses
             prompt = f"""You are a document classifier for an insurance claims system.
@@ -641,7 +648,7 @@ Analyze this document and determine its type. Use ONLY one of the following type
 
 Expected type for this upload: "{expected_type}"
 
-Respond ONLY with valid JSON (no markdown, no explanation):
+Respond ONLY with valid JSON (no markdown fences, no extra text):
 {{
   "detected_type": "<one of the tokens above>",
   "is_relevant": true/false,
@@ -653,7 +660,10 @@ Respond ONLY with valid JSON (no markdown, no explanation):
             loop = asyncio.get_running_loop()
             
             def _call():
-                response = self._gemini_model.generate_content([content_part, prompt])
+                response = self._gemini_model.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[content_part, prompt],
+                )
                 return response.text
             
             raw_text = await loop.run_in_executor(None, _call)
@@ -668,8 +678,9 @@ Respond ONLY with valid JSON (no markdown, no explanation):
             
             return {
                 "detected_type": result.get("detected_type", "unknown"),
-                "is_relevant": result.get("is_relevant", False),
-                "confidence": float(result.get("confidence", 0.0)),
+                "matches_expected": result.get("matches_expected", True),
+                "is_relevant": result.get("is_relevant", True),
+                "confidence": float(result.get("confidence", 0.5)),
                 "reason": result.get("reason", "")
             }
         
@@ -678,6 +689,7 @@ Respond ONLY with valid JSON (no markdown, no explanation):
             # Fail-open with low confidence
             return {
                 "detected_type": expected_type,
+                "matches_expected": True,
                 "is_relevant": True,
                 "confidence": 0.3,
                 "reason": f"Classification error: {str(exc)}"

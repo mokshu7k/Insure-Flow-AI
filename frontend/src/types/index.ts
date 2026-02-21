@@ -16,8 +16,21 @@ export interface ClaimCreate {
 export type ClaimType = "HEALTH" | "MOTOR" | "REIMBURSEMENT";
 export type ClaimStatus =
     | "SUBMITTED" | "OCR_PROCESSED" | "UNDER_REVIEW" | "FRAUD_ANALYZED"
-    | "APPROVED" | "REJECTED" | "MANUAL_REVIEW_REQUIRED" | "SETTLED"
-    | "PRE_AUTHORIZED";
+    | "APPROVED" | "REJECTED" | "MANUAL_REVIEW_REQUIRED" | "SETTLED" | "PRE_AUTHORIZED";
+
+// Mirrors backend ClaimStatus.TRANSITIONS
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+    SUBMITTED:              ["UNDER_REVIEW", "PRE_AUTHORIZED", "MANUAL_REVIEW_REQUIRED", "APPROVED", "REJECTED"],
+    UNDER_REVIEW:           ["APPROVED", "REJECTED", "MANUAL_REVIEW_REQUIRED"],
+    MANUAL_REVIEW_REQUIRED: ["APPROVED", "REJECTED", "UNDER_REVIEW"],
+    APPROVED:               ["SETTLED"],
+    PRE_AUTHORIZED:         ["SETTLED", "REJECTED"],
+    REJECTED:               [],
+    SETTLED:                [],
+};
+export function canTransitionTo(currentStatus: string, targetStatus: string): boolean {
+    return (ALLOWED_TRANSITIONS[currentStatus] ?? []).includes(targetStatus);
+}
 
 export interface Claim {
     id: string;
@@ -28,11 +41,12 @@ export interface Claim {
     description: string | null;
     status: ClaimStatus;
     fraud_score: number | null;
+    adjuster_notes: string | null;
     created_at: string;
     updated_at: string;
 }
 export interface ClaimListResponse { items: Claim[]; total: number; page: number; page_size: number; total_pages: number; }
-export interface ClaimStatusUpdate { status: string; reason?: string; }
+export interface ClaimStatusUpdate { status: string; adjuster_notes?: string; }
 
 // ── Fraud ─────────────────────────────────────────
 export interface LayerScore {

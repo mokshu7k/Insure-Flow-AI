@@ -8,8 +8,11 @@ import type { AuditLogEntry } from "@/types";
 import { Shield, Search } from "lucide-react";
 
 function formatAction(a: string) { return a.replace(/_/g, " "); }
-function formatDT(ts: string) {
-    return new Date(ts).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+function formatDT(ts: string | null | undefined) {
+    if (!ts) return "—";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 const ACTION_TYPE_COLOR: Record<string, string> = {

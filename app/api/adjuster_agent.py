@@ -125,18 +125,19 @@ async def get_claim_report(
 @router.post("/report/{claim_id}", response_model=ReportResponse)
 async def generate_claim_report(
     claim_id: str,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Generate (or return cached) comprehensive Markdown claim report."""
+    """Generate (or return cached) comprehensive claim report. Pass ?force=true to regenerate."""
     from app.core.rbac import require_any_role
     from app.models.claim import Claim
     from app.ai_agents.adjuster.tools import generate_report
     require_any_role(["INSURER_ADMIN", "CLAIM_ADJUSTER"])(current_user)
 
-    # Return cached report if already generated
+    # Return cached report if already generated (unless force regenerate)
     claim = await db.get(Claim, uuid.UUID(claim_id))
-    if claim and claim.ai_report:
+    if claim and claim.ai_report and not force:
         return ReportResponse(report=claim.ai_report, claim_id=claim_id, cached=True)
 
     try:

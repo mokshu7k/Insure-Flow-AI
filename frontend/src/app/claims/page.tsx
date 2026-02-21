@@ -16,8 +16,11 @@ function formatCurrency(amount: number | null) {
     return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(amount);
 }
 
-function formatDate(dt: string) {
-    return new Date(dt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+function formatDate(dt: string | null | undefined) {
+    if (!dt) return "—";
+    const d = new Date(dt);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
 export default function ClaimsPage() {

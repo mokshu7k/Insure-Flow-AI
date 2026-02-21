@@ -15,8 +15,11 @@ const ROLE_CONFIG: Record<string, { label: string; color: string; bg: string; bo
     AUDITOR: { label: "Compliance Auditor", color: "var(--amber)", bg: "var(--amber-bg)", border: "var(--amber-border)", desc: "Read-only access to audit trails and compliance reports." },
 };
 
-function formatDate(dt: string) {
-    return new Date(dt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+function formatDate(dt: string | null | undefined) {
+    if (!dt) return "—";
+    const d = new Date(dt);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 }
 
 export default function ProfilePage() {

@@ -60,9 +60,9 @@ export function ClaimAssistantBubble() {
             {open && (
                 <div style={{
                     position: "fixed", bottom: 76, right: 20, zIndex: 1000,
-                    width: 320, height: 440,
+                    width: 380, height: 520,
                     background: "var(--bg-panel)", border: "1px solid var(--border)",
-                    borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+                    borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
                     display: "flex", flexDirection: "column", overflow: "hidden",
                 }}>
                     {/* Header */}
@@ -71,8 +71,8 @@ export function ClaimAssistantBubble() {
                         borderBottom: "1px solid var(--border)",
                         background: "var(--bg-surface)",
                     }}>
-                        <Bot size={14} color="var(--blue)" />
-                        <span style={{ fontSize: "0.8125rem", fontWeight: 600, flex: 1 }}>InsureFlow Assistant</span>
+                        <Bot size={15} color="var(--blue)" />
+                        <span style={{ fontSize: "0.875rem", fontWeight: 600, flex: 1 }}>InsureFlow Assistant</span>
                         <button
                             title="Open full chat"
                             onClick={() => { setOpen(false); router.push("/chat"); }}
@@ -89,21 +89,21 @@ export function ClaimAssistantBubble() {
                     </div>
 
                     {/* Messages */}
-                    <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
                         {messages.length === 0 && (
-                            <div style={{ textAlign: "center", padding: "20px 8px" }}>
-                                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", lineHeight: 1.5 }}>
+                            <div style={{ textAlign: "center", padding: "24px 8px" }}>
+                                <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", lineHeight: 1.5 }}>
                                     Hi! I can help with your claims, documents, or policy questions.
                                 </p>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
                                     {["File a new claim", "Check claim status", "Document requirements"].map((p) => (
                                         <button
                                             key={p}
                                             onClick={() => sendMessage(p)}
                                             style={{
                                                 border: "1px solid var(--border)", borderRadius: 6,
-                                                padding: "6px 10px", background: "var(--bg-surface)",
-                                                cursor: "pointer", fontSize: "0.6875rem",
+                                                padding: "8px 12px", background: "var(--bg-surface)",
+                                                cursor: "pointer", fontSize: "0.8125rem",
                                                 color: "var(--text-secondary)", textAlign: "left",
                                             }}
                                         >
@@ -138,10 +138,10 @@ export function ClaimAssistantBubble() {
                                     background: msg.role === "user" ? "var(--blue)" : "var(--bg-surface)",
                                     color: msg.role === "user" ? "#fff" : "var(--text-primary)",
                                     border: msg.role === "agent" ? "1px solid var(--border)" : "none",
-                                    borderRadius: msg.role === "user" ? "10px 4px 4px 10px" : "4px 10px 10px 4px",
-                                    padding: "7px 10px",
-                                    fontSize: "0.75rem",
-                                    lineHeight: 1.5,
+                                    borderRadius: msg.role === "user" ? "12px 4px 4px 12px" : "4px 12px 12px 4px",
+                                    padding: "8px 12px",
+                                    fontSize: "0.875rem",
+                                    lineHeight: 1.55,
                                     whiteSpace: "pre-wrap",
                                     wordBreak: "break-word",
                                 }}
@@ -154,11 +154,11 @@ export function ClaimAssistantBubble() {
                             <div style={{
                                 alignSelf: "flex-start",
                                 background: "var(--bg-surface)", border: "1px solid var(--border)",
-                                borderRadius: "4px 10px 10px 4px", padding: "7px 10px",
-                                display: "flex", gap: 4, alignItems: "center",
+                                borderRadius: "4px 12px 12px 4px", padding: "8px 12px",
+                                display: "flex", gap: 6, alignItems: "center",
                             }}>
-                                <Loader2 size={11} style={{ animation: "spin 1s linear infinite", color: "var(--text-muted)" }} />
-                                <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>Thinking…</span>
+                                <Loader2 size={13} style={{ animation: "spin 1s linear infinite", color: "var(--text-muted)" }} />
+                                <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)" }}>Thinking…</span>
                             </div>
                         )}
                         <div ref={bottomRef} />
@@ -166,8 +166,8 @@ export function ClaimAssistantBubble() {
 
                     {/* Input */}
                     <div style={{
-                        borderTop: "1px solid var(--border)", padding: "8px 10px",
-                        display: "flex", gap: 6,
+                        borderTop: "1px solid var(--border)", padding: "10px 12px",
+                        display: "flex", gap: 8,
                     }}>
                         <input
                             className="input"
@@ -181,15 +181,15 @@ export function ClaimAssistantBubble() {
                             }}
                             placeholder="Ask a question…"
                             disabled={loading}
-                            style={{ flex: 1, height: 32, fontSize: "0.75rem", padding: "0 8px" }}
+                            style={{ flex: 1, height: 36, fontSize: "0.875rem", padding: "0 10px" }}
                         />
                         <button
                             className="btn btn-primary"
                             disabled={!input.trim() || loading}
                             onClick={() => sendMessage(input)}
-                            style={{ height: 32, padding: "0 10px" }}
+                            style={{ height: 36, padding: "0 12px" }}
                         >
-                            <Send size={12} />
+                            <Send size={14} />
                         </button>
                     </div>
                 </div>

@@ -11,7 +11,7 @@ import { EditableExtractedData } from "@/components/ui/EditableExtractedData";
 import type { ClaimType, DocumentResponse, DocumentType } from "@/types";
 import {
     Heart, Car, ReceiptText, Upload, X, CheckCircle2,
-    ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader,
+    ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader, AlertTriangle,
     Shield, AlertCircle,
 } from "lucide-react";
 
@@ -92,8 +92,8 @@ const TYPE_META: Record<ClaimType, { icon: React.ReactNode; title: string; desc:
 
 // ── File drop zone ────────────────────────────────────────────────────────────
 function FileZone({
-    spec, file, onChange,
-}: { spec: DocSpec; file: File | undefined; onChange: (f: File | null) => void }) {
+    spec, file, onChange, validationError,
+}: { spec: DocSpec; file: File | undefined; onChange: (f: File | null) => void; validationError?: string | null }) {
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         const dropped = e.dataTransfer.files[0];
@@ -101,6 +101,7 @@ function FileZone({
     }, [onChange]);
 
     return (
+        <div>
         <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
@@ -151,6 +152,23 @@ function FileZone({
                 </>
             )}
         </div>
+        {validationError && (
+            <div style={{
+                display: "flex", gap: 8, alignItems: "flex-start",
+                marginTop: 6, padding: "8px 10px",
+                background: "rgba(245,158,11,0.08)",
+                border: "1px solid rgba(245,158,11,0.35)",
+                borderRadius: 6,
+            }}>
+                <AlertTriangle size={13} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div style={{ fontSize: "0.6875rem", lineHeight: 1.45 }}>
+                    <span style={{ fontWeight: 600, color: "#f59e0b" }}>{spec.label} — document rejected: </span>
+                    <span style={{ color: "var(--text-primary)" }}>{validationError}</span>
+                    <div style={{ color: "var(--text-muted)", marginTop: 2 }}>Please remove this file and upload the correct document.</div>
+                </div>
+            </div>
+        )}
+        </div>
     );
 }
 
@@ -184,6 +202,7 @@ function WizardContent() {
     const [files, setFiles] = useState<Map<number, File>>(new Map()); // keyed by docSpec index
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
+    const [docErrors, setDocErrors] = useState<Map<number, string>>(new Map());
 
     // Step 3
     const [claimAmount, setClaimAmount] = useState("");
@@ -333,6 +352,7 @@ function WizardContent() {
             return;
         }
         setUploadError(null);
+        setDocErrors(new Map());
         setUploading(true);
         try {
             // Create placeholder claim
@@ -343,13 +363,33 @@ function WizardContent() {
             });
             setClaimId(claim.id);
 
-            // Upload documents
+            // Upload documents — collect per-doc validation errors separately
             const results: DocumentResponse[] = [];
+            const newDocErrors = new Map<number, string>();
             for (const [idx, file] of files.entries()) {
                 const spec = specs[idx];
-                const doc = await documentService.upload(claim.id, file, spec.type);
-                results.push(doc);
+                try {
+                    const doc = await documentService.upload(claim.id, file, spec.type);
+                    results.push(doc);
+                } catch (err) {
+                    // Extract the backend detail for 400 validation errors
+                    const axErr = err as { response?: { status?: number; data?: { detail?: string; error_code?: string } } };
+                    if (axErr.response?.status === 400) {
+                        const reason = axErr.response?.data?.detail ?? "This document appears to be incorrect.";
+                        newDocErrors.set(idx, reason);
+                    } else {
+                        // Unexpected system error — surface normally
+                        throw err;
+                    }
+                }
             }
+
+            if (newDocErrors.size > 0) {
+                setDocErrors(newDocErrors);
+                // Don't advance — let user fix the flagged documents
+                return;
+            }
+
             setUploadedDocs(results);
 
             // Pre-fill amount from OCR
@@ -583,10 +623,16 @@ function WizardContent() {
                                     key={idx}
                                     spec={spec}
                                     file={files.get(idx)}
+                                    validationError={docErrors.get(idx) ?? null}
                                     onChange={(f) => {
                                         setFiles((prev) => {
                                             const next = new Map(prev);
                                             if (f) next.set(idx, f); else next.delete(idx);
+                                            return next;
+                                        });
+                                        setDocErrors((prev) => {
+                                            const next = new Map(prev);
+                                            next.delete(idx);
                                             return next;
                                         });
                                     }}
@@ -594,6 +640,18 @@ function WizardContent() {
                             ))}
                         </div>
 
+                        {docErrors.size > 0 && (
+                            <div style={{
+                                display: "flex", gap: 8, alignItems: "center",
+                                padding: "8px 12px", borderRadius: 6, marginBottom: 12,
+                                background: "rgba(245,158,11,0.08)",
+                                border: "1px solid rgba(245,158,11,0.35)",
+                                fontSize: "0.75rem", color: "#f59e0b", fontWeight: 500,
+                            }}>
+                                <AlertTriangle size={14} />
+                                {docErrors.size === 1 ? "1 document" : `${docErrors.size} documents`} could not be validated — see details above and re-upload the correct files.
+                            </div>
+                        )}
                         {uploadError && (
                             <div style={{ color: "var(--red, #ef4444)", fontSize: "0.75rem", marginBottom: 12 }}>
                                 {uploadError}

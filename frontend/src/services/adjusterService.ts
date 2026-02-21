@@ -10,4 +10,7 @@ export const adjusterService = {
 
     generateReport: (claimId: string) =>
         api.post<AdjusterReportResponse>(`/adjuster/report/${claimId}`).then((r) => r.data),
+
+    regenerateReport: (claimId: string) =>
+        api.post<AdjusterReportResponse>(`/adjuster/report/${claimId}?force=true`).then((r) => r.data),
 };

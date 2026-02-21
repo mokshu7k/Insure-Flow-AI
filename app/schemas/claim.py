@@ -33,6 +33,7 @@ class ClaimCreate(BaseModel):
 
 class ClaimStatusUpdate(BaseModel):
     status: str
+    adjuster_notes: Optional[str] = None
 
     @field_validator("status")
     @classmethod
@@ -67,7 +68,9 @@ class ClaimResponse(BaseModel):
     description: Optional[str]
     status: str
     fraud_score: Optional[float]
+    adjuster_notes: Optional[str]
     created_at: datetime
+    updated_at: datetime
 
 
 class ClaimListResponse(BaseModel):

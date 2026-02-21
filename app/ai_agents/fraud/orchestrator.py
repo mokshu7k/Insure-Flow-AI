@@ -1,27 +1,21 @@
 """
-Fraud Engine Orchestrator — coordinates all 6 layers and produces final assessment.
+Fraud Engine Orchestrator — LLM-powered layer scoring with rule-based fallback.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.ai_agents.fraud import (
-    aggregator,
-    layer1_deterministic,
-    layer2_statistical,
-    layer3_narrative,
-    layer4_document,
-    layer5_network,
-    layer6_ml,
-)
 from app.ai_agents.fraud.config import cfg
-from app.ai_agents.fraud.metrics import LAYER_LATENCY, record_analysis
 from app.ai_agents.fraud.privacy import sanitize
 
 logger = logging.getLogger(__name__)
+
+# Layer display names for the prompt
+LAYER_NAMES = ["deterministic", "statistical", "narrative", "document", "network", "ml"]
 
 
 @dataclass
@@ -43,10 +37,218 @@ class FraudEngineResponse:
 
 
 class FraudEngineOrchestrator:
-    """Coordinates the 6-layer fraud analysis pipeline."""
+    """LLM-powered fraud analysis — Gemini decides per-layer scores + explanation."""
 
     def analyze(self, claim_context: dict[str, Any], privacy_mode: str = "strict") -> FraudEngineResponse:
         logger.info("Starting fraud analysis for claim=%s", claim_context.get("claim_id"))
+
+        try:
+            return self._llm_analyze(claim_context, privacy_mode)
+        except Exception as exc:
+            logger.warning("LLM fraud analysis failed (%s), using rule-based fallback", exc)
+            return self._fallback_analyze(claim_context, privacy_mode)
+
+    # ── LLM-based analysis ────────────────────────────────────────────────────
+    def _llm_analyze(self, claim_context: dict[str, Any], privacy_mode: str) -> FraudEngineResponse:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        from app.config import settings
+
+        if not settings.GCP_API_KEY:
+            raise ValueError("No GCP_API_KEY configured")
+
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            google_api_key=settings.GCP_API_KEY,
+            temperature=0.3,
+            max_output_tokens=5000,
+        )
+
+        # Build a clean summary of the claim for the LLM
+        doc_validation = claim_context.get("document_validation", {})
+        extracted = claim_context.get("extracted_data", {})
+
+        prompt = f"""You are an expert insurance fraud scoring AI. Your ONLY job is to assign numerical fraud risk scores to each detection layer. You are NOT writing a report.
+
+CLAIM DATA:
+- Claim ID: {claim_context.get('claim_id')}
+- Type: {claim_context.get('claim_type', 'unknown')}
+- Amount: {claim_context.get('claim_amount', 0)}
+- Policy: {claim_context.get('policy_number', 'unknown')}
+- Description: {claim_context.get('description', 'none')[:500]}
+- Filed: {claim_context.get('claim_created_at', 'unknown')}
+
+CLAIMANT HISTORY:
+- Claims in last 30 days: {claim_context.get('recent_claims_30d', 0)}
+- Total claimed in 90 days: {claim_context.get('total_claim_amount_90d', 0)}
+- Previous fraud flags: {claim_context.get('fraud_flag_count', 0)}
+
+DOCUMENT DATA:
+- Extracted fields: {json.dumps(extracted, default=str)[:800] if extracted else 'none'}
+- Validation status: {doc_validation.get('validation_status', 'not_validated')}
+- Validation reason: {doc_validation.get('validation_reason', 'none')}
+- Document fraud weight: {doc_validation.get('fraud_signal_weight', 0)}
+
+TASK: Score fraud risk from 0.0 (clean) to 1.0 (fraudulent) for each layer. Keep flag strings SHORT (under 60 chars each, no special characters, no curly braces).
+
+Layers:
+1. deterministic - Rule violations (amount limits, frequency, duplicates)
+2. statistical - Statistical anomalies (unusual amounts, patterns)
+3. narrative - Description consistency and red flags
+4. document - Document quality, missing fields, tampering signs
+5. network - Connections to known fraud patterns
+6. ml - Overall behavioral pattern signals
+
+Respond with ONLY this JSON object, nothing else. No markdown, no backticks, no extra text. All strings must be on a single line:
+{{"layers":{{"deterministic":{{"score":0.0,"flags":[]}},"statistical":{{"score":0.0,"flags":[]}},"narrative":{{"score":0.0,"flags":[]}},"document":{{"score":0.0,"flags":[]}},"network":{{"score":0.0,"flags":[]}},"ml":{{"score":0.0,"flags":[]}}}},"explanation":"One short sentence summarizing the risk. See the full Claim Report for detailed analysis."}}"""
+
+        t0 = time.perf_counter()
+        response = llm.invoke(prompt)
+        elapsed = time.perf_counter() - t0
+        logger.info("LLM fraud analysis completed in %.2fs", elapsed)
+
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+            ).strip()
+
+        # Robust JSON extraction — handle code fences, extra text, etc.
+        import re
+        content = content.strip()
+        logger.info("LLM fraud raw response (first 1000 chars): %s", content[:1000])
+
+        # Step 1: Strip markdown code fences if present
+        fence_match = re.search(r"```(?:json)?\s*\n?(.*?)```", content, re.DOTALL)
+        if fence_match:
+            content = fence_match.group(1).strip()
+        else:
+            # Find outermost JSON object
+            brace_start = content.find("{")
+            brace_end = content.rfind("}")
+            if brace_start != -1 and brace_end != -1:
+                content = content[brace_start:brace_end + 1]
+
+        # Step 2: Attempt multiple parsing strategies
+        parsed = None
+
+        # Strategy A: direct parse
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy B: collapse all whitespace (newlines, tabs) to single spaces
+        if parsed is None:
+            try:
+                cleaned = re.sub(r'\s+', ' ', content)
+                parsed = json.loads(cleaned)
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy C: fix common LLM issues — trailing commas, single quotes
+        if parsed is None:
+            try:
+                fixed = re.sub(r'\s+', ' ', content)
+                fixed = re.sub(r',\s*}', '}', fixed)   # trailing comma before }
+                fixed = re.sub(r',\s*]', ']', fixed)   # trailing comma before ]
+                fixed = fixed.replace("'", '"')          # single quotes to double
+                parsed = json.loads(fixed)
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy D: use ast.literal_eval as last resort for Python dict syntax
+        if parsed is None:
+            try:
+                import ast
+                parsed = ast.literal_eval(content)
+            except (ValueError, SyntaxError):
+                pass
+
+        if parsed is None:
+            raise ValueError(f"Could not parse LLM response as JSON. Raw (first 300): {content[:300]}")
+        layers = parsed["layers"]
+        explanation = parsed.get("explanation", "")
+
+        # Ensure explanation references the deep report
+        if "claim report" not in explanation.lower():
+            explanation = explanation.rstrip(". ") + ". See the full Claim Report for detailed analysis."
+
+        # Build layer_scores and layer_details in the format the frontend expects
+        layer_scores: dict[str, Any] = {}
+        layer_details: dict[str, dict] = {}
+        all_flags: list[str] = []
+        weighted_total = 0.0
+        weights = cfg.LAYER_WEIGHTS
+
+        for name in LAYER_NAMES:
+            layer_data = layers.get(name, {"score": 0.0, "flags": []})
+            score = max(0.0, min(1.0, float(layer_data.get("score", 0.0))))
+            flags = layer_data.get("flags", [])
+
+            layer_scores[name] = {
+                "score": score,
+                "flags": flags,
+                "layer": name,
+                "method": "llm",
+                "ai_degraded": False,
+            }
+            layer_details[name] = {
+                "score": score,
+                "flags": flags,
+                "layer": name,
+                "method": "llm",
+                "ai_degraded": False,
+            }
+            all_flags.extend(flags)
+            weighted_total += score * weights.get(name, 0.0)
+
+        final_score = round(min(weighted_total, 1.0), 4)
+
+        # CRITICAL OVERRIDE: document validation flagged as critical
+        doc_validation = claim_context.get("document_validation", {})
+        if doc_validation.get("validation_status") == "flagged_critical":
+            logger.warning("Document flagged as CRITICAL — overriding fraud score to 0.95")
+            final_score = 0.95
+            all_flags = ["DOCUMENT_CRITICAL_OVERRIDE"] + all_flags
+
+        risk_level = self._risk_level(final_score)
+
+        try:
+            from app.ai_agents.fraud.metrics import record_analysis
+            record_analysis(final_score, risk_level)
+        except Exception:
+            pass
+
+        return FraudEngineResponse(
+            fraud_score=final_score,
+            risk_level=risk_level,
+            layer_scores=layer_scores,
+            layer_details=layer_details,
+            deterministic_signals=layers.get("deterministic", {}).get("flags", []),
+            statistical_signals=layers.get("statistical", {}).get("flags", []),
+            behavioral_flags=layers.get("narrative", {}).get("flags", []),
+            document_flags=layers.get("document", {}).get("flags", []),
+            network_flags=layers.get("network", {}).get("flags", []),
+            explanation_text=explanation,
+            feature_snapshot=sanitize(claim_context, mode=privacy_mode),
+            ai_degraded_mode=False,
+            ml_model_used=False,
+        )
+
+    # ── Rule-based fallback ───────────────────────────────────────────────────
+    def _fallback_analyze(self, claim_context: dict[str, Any], privacy_mode: str) -> FraudEngineResponse:
+        """Original rule-based pipeline — used when LLM is unavailable."""
+        from app.ai_agents.fraud import (
+            aggregator,
+            layer1_deterministic,
+            layer2_statistical,
+            layer3_narrative,
+            layer4_document,
+            layer5_network,
+            layer6_ml,
+        )
+        from app.ai_agents.fraud.metrics import LAYER_LATENCY
+
         layer_results: dict[str, dict] = {}
 
         for layer_name, layer_fn in [
@@ -68,7 +270,7 @@ class FraudEngineOrchestrator:
                 except Exception:
                     pass
 
-        # Layer 3 — narrative (Gemini)
+        # Layer 3 — narrative
         from app.config import settings
         t0 = time.perf_counter()
         try:
@@ -84,27 +286,21 @@ class FraudEngineOrchestrator:
             except Exception:
                 pass
 
-        # Aggregate scores
         agg = aggregator.aggregate(layer_results)
-        
-        # CRITICAL OVERRIDE: If document validation flagged as critical, override final score
+
+        # CRITICAL OVERRIDE
         doc_validation = claim_context.get("document_validation", {})
         if doc_validation.get("validation_status") == "flagged_critical":
-            logger.warning("Document flagged as CRITICAL - overriding fraud score to 0.95")
             agg["final_score"] = 0.95
             agg["risk_level"] = "VERY_HIGH"
             all_flags = ["DOCUMENT_CRITICAL_OVERRIDE"] + agg["all_flags"]
         else:
             all_flags = agg["all_flags"]
 
-        # Build human-readable explanation via Gemini (or fallback to string concat)
-        explanation = self._build_explanation(
-            layer_results=layer_results,
-            agg=agg,
-            claim_context=claim_context,
-        )
+        explanation = self._fallback_explanation(all_flags, agg["final_score"], agg["risk_level"])
 
         try:
+            from app.ai_agents.fraud.metrics import record_analysis
             record_analysis(agg["final_score"], agg["risk_level"])
         except Exception:
             pass
@@ -113,75 +309,39 @@ class FraudEngineOrchestrator:
             fraud_score=agg["final_score"],
             risk_level=agg["risk_level"],
             layer_scores=agg["layer_scores"],
-            layer_details=layer_results,            # Full per-layer raw output
+            layer_details=layer_results,
             deterministic_signals=layer_results.get("deterministic", {}).get("flags", []),
-            statistical_signals=layer_results.get("statistical",   {}).get("signals", []),
-            behavioral_flags=layer_results.get("narrative",     {}).get("flags", []),
-            document_flags=layer_results.get("document",      {}).get("flags", []),
-            network_flags=layer_results.get("network",       {}).get("flags", []),
+            statistical_signals=layer_results.get("statistical", {}).get("signals", []),
+            behavioral_flags=layer_results.get("narrative", {}).get("flags", []),
+            document_flags=layer_results.get("document", {}).get("flags", []),
+            network_flags=layer_results.get("network", {}).get("flags", []),
             explanation_text=explanation,
             feature_snapshot=sanitize(claim_context, mode=privacy_mode),
             ai_degraded_mode=layer_results.get("narrative", {}).get("ai_degraded", True),
             ml_model_used=layer_results.get("ml", {}).get("model_used", False),
         )
 
-    # ── Explanation ────────────────────────────────────────────────────────────
-    def _build_explanation(
-        self,
-        layer_results: dict[str, dict],
-        agg: dict[str, Any],
-        claim_context: dict[str, Any],
-    ) -> str:
-        """Try Gemini first for a narrative explanation; fallback to rule-based string."""
-        try:
-            return self._gemini_explanation(layer_results, agg, claim_context)
-        except Exception as exc:
-            logger.warning("Gemini explanation failed, using fallback: %s", exc)
-            return self._fallback_explanation(agg["all_flags"], agg["final_score"], agg["risk_level"])
+    # ── Helpers ────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _risk_level(score: float) -> str:
+        for label, threshold in sorted(
+            cfg.RISK_LEVEL_BOUNDARIES.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            if score >= threshold:
+                return label
+        return "MINIMAL"
 
-    def _gemini_explanation(
-        self,
-        layer_results: dict[str, dict],
-        agg: dict[str, Any],
-        claim_context: dict[str, Any],
-    ) -> str:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        from app.config import settings
-
-        if not settings.GCP_API_KEY:
-            raise ValueError("No GCP_API_KEY")
-
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=settings.GCP_API_KEY,
-            temperature=0.2,
-        )
-
-        # Summarise signals for the prompt (keep it concise)
-        all_flags = agg["all_flags"]
-        layer_scores_str = ", ".join(
-            f"{k}={v:.2f}" for k, v in agg["layer_scores"].items()
-        )
-
-        prompt = (
-            f"You are an insurance fraud analyst. Write a concise 2-3 sentence explanation "
-            f"for why this claim received a fraud score of {agg['final_score']:.2f} "
-            f"({agg['risk_level']} risk). "
-            f"Layer scores: {layer_scores_str}. "
-            f"Signals detected: {'; '.join(all_flags[:10]) if all_flags else 'none'}. "
-            f"Claim type: {claim_context.get('claim_type', 'unknown')}. "
-            f"Do NOT use JSON. Plain English only."
-        )
-
-        response = llm.invoke(prompt)
-        return response.content.strip()
-
-    def _fallback_explanation(self, flags: list[str], score: float, risk_level: str) -> str:
+    @staticmethod
+    def _fallback_explanation(flags: list[str], score: float, risk_level: str) -> str:
         if not flags:
-            return f"No significant fraud indicators detected. Risk: {risk_level} (score={score:.2f})."
+            return (
+                f"No significant fraud indicators detected. Risk: {risk_level} (score={score:.2f}). "
+                f"See the full Claim Report for detailed analysis."
+            )
         flag_summary = "; ".join(flags[:5])
         return (
             f"Fraud score: {score:.2f} ({risk_level}). "
             f"Primary signals: {flag_summary}."
             + (" [+more]" if len(flags) > 5 else "")
+            + " See the full Claim Report for detailed analysis."
         )

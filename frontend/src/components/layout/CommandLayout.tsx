@@ -11,7 +11,7 @@ export function CommandLayout({ children, rightPanel, header }: CommandLayoutPro
     return (
         <div style={{
             display: "grid",
-            gridTemplateColumns: `var(--rail-width) 1fr${rightPanel ? " var(--panel-width)" : ""}`,
+            gridTemplateColumns: `auto 1fr${rightPanel ? " auto" : ""}`,
             gridTemplateRows: header ? "var(--header-height) 1fr" : "1fr",
             height: "100vh",
             overflow: "hidden",
@@ -47,7 +47,7 @@ export function CommandLayout({ children, rightPanel, header }: CommandLayoutPro
                 <div style={{
                     gridColumn: "3",
                     gridRow: "1 / -1",
-                    overflow: "hidden",
+                    overflow: "visible",
                     display: "flex",
                     flexDirection: "column",
                 }}>

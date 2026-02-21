@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from app.config import settings
 from app.core.exceptions import InsureFlowException
@@ -59,6 +60,37 @@ async def insureflow_exception_handler(request: Request, exc: InsureFlowExceptio
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail, "error_code": exc.error_code},
+    )
+
+
+@app.exception_handler(SAOperationalError)
+async def db_operational_error_handler(request: Request, exc: SAOperationalError) -> JSONResponse:
+    """Transient DB connectivity errors (pool timeout, host unreachable, etc.)"""
+    logger.error(
+        "Database connectivity error on %s %s: %s",
+        request.method,
+        request.url.path,
+        str(exc.orig) if exc.orig else str(exc),
+    )
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database temporarily unavailable, please retry", "error_code": "DB_UNAVAILABLE"},
+    )
+
+
+@app.exception_handler(OSError)
+async def os_error_handler(request: Request, exc: OSError) -> JSONResponse:
+    """Network-level errors reaching the database (WSAEHOSTUNREACH, ECONNREFUSED, etc.)"""
+    logger.error(
+        "Network error on %s %s: [Errno %s] %s",
+        request.method,
+        request.url.path,
+        exc.errno,
+        exc.strerror,
+    )
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database temporarily unavailable, please retry", "error_code": "DB_UNAVAILABLE"},
     )
 
 

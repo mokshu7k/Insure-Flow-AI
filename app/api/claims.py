@@ -53,7 +53,10 @@ async def update_status(
 ):
     from app.core.rbac import require_any_role
     require_any_role(["INSURER_ADMIN", "CLAIM_ADJUSTER"])(current_user)
-    claim = await claim_service.update_claim_status(claim_id, payload.status, str(current_user.id), current_user.role, db)
+    claim = await claim_service.update_claim_status(
+        claim_id, payload.status, str(current_user.id), current_user.role, db,
+        adjuster_notes=payload.adjuster_notes,
+    )
     return claim
 
 

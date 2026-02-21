@@ -11,18 +11,24 @@ import { fraudService } from "@/services/fraudService";
 import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
 import { adjusterService } from "@/services/adjusterService";
-import type { Claim, FraudAssessment, DocumentResponse } from "@/types";
+import { complianceService } from "@/services/complianceService";
+import type { Claim, FraudAssessment, DocumentResponse, AuditLogEntry } from "@/types";
+import { canTransitionTo } from "@/types";
 import {
     ArrowLeft, Zap, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
-    ChevronDown, ChevronUp, Send, Loader2
+    ChevronDown, ChevronUp, Send, Loader2, RefreshCw, Flag, Clock,
+    CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X
 } from "lucide-react";
 
 function formatCurrency(n: number | null) {
     if (!n) return "—";
     return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 }
-function formatDateTime(dt: string) {
-    return new Date(dt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+function formatDateTime(dt: string | null | undefined) {
+    if (!dt) return "—";
+    const d = new Date(dt);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 const LAYER_LABELS: Record<string, string> = {
@@ -60,6 +66,55 @@ function LayerScoreRow({ name, score, flags }: { name: string; score: number; fl
     );
 }
 
+function composeFlagReason(assessment: FraudAssessment | null, claim: { claim_type: string; description?: string | null } | null): string {
+    if (!assessment) return "";
+    const layerLabels: Record<string, string> = {
+        deterministic: "Rule violations", statistical: "Statistical anomalies", behavioral: "Behavioral flags",
+        document: "Document issues", network: "Network signals", narrative: "AI narrative",
+    };
+
+    const parts: string[] = [];
+
+    // Risk headline
+    const risk = assessment.risk_level?.replace(/_/g, " ") ?? null;
+    const score = assessment.fraud_score ? `${(assessment.fraud_score * 100).toFixed(0)}%` : null;
+    if (risk || score) {
+        parts.push(`Fraud risk assessed as ${[risk, score ? `(score: ${score})` : null].filter(Boolean).join(" ")}.`);
+    }
+
+    // Collect all concrete flags from every channel
+    const allFlags: { source: string; flags: string[] }[] = [
+        { source: "Deterministic rules", flags: assessment.deterministic_signals ?? [] },
+        { source: "Statistical signals",  flags: assessment.statistical_signals ?? [] },
+        { source: "Behavioural",          flags: assessment.behavioral_flags ?? [] },
+        { source: "Documents",            flags: assessment.document_flags ?? [] },
+        { source: "Network",              flags: assessment.network_flags ?? [] },
+    ];
+    for (const { source, flags } of allFlags) {
+        if (flags.length) {
+            parts.push(`${source}: ${flags.slice(0, 4).map(f => f.replace(/_/g, " ").toLowerCase()).join("; ")}${flags.length > 4 ? " (+more)" : ""}.`);
+        }
+    }
+
+    // High-scoring layer callout
+    if (assessment.layer_scores) {
+        const highLayers = Object.entries(assessment.layer_scores)
+            .filter(([, l]) => l.score >= 0.6)
+            .sort(([, a], [, b]) => b.score - a.score)
+            .map(([k, l]) => `${layerLabels[k] ?? k} (${(l.score * 100).toFixed(0)}%)`);
+        if (highLayers.length) {
+            parts.push(`High-scoring layers: ${highLayers.join(", ")}.`);
+        }
+    }
+
+    // Missing description nudge
+    if (!claim?.description) {
+        parts.push("No claim description was provided.");
+    }
+
+    return parts.join("\n");
+}
+
 export default function ClaimDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
@@ -88,6 +143,15 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [agentInput, setAgentInput] = useState("");
     const [agentSending, setAgentSending] = useState(false);
     const agentBottomRef = useRef<HTMLDivElement>(null);
+    // Flag modal
+    const [showFlagModal, setShowFlagModal] = useState(false);
+    const [flagReason, setFlagReason] = useState("");
+    // Reject modal
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [rejectReason, setRejectReason] = useState("");
+    // Timeline
+    const [timelineEntries, setTimelineEntries] = useState<AuditLogEntry[]>([]);
+    const [timelineLoading, setTimelineLoading] = useState(false);
 
     // ── Polling for background Gemini extraction ───────────────────────────
     const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -150,6 +214,20 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
         }
     }, [reportLoaded, id]);
 
+    // Force-regenerate the report (bypass cache)
+    const regenerateReport = useCallback(async () => {
+        if (!id || reportLoading) return;
+        setReportLoading(true);
+        try {
+            const res = await adjusterService.regenerateReport(id);
+            setClaimReport(res.report || null);
+        } catch {
+            setClaimReport(null);
+        } finally {
+            setReportLoading(false);
+        }
+    }, [id, reportLoading]);
+
     useEffect(() => {
         if (rightTab === "agent" && canAction) loadReport();
     }, [rightTab, canAction, loadReport]);
@@ -174,6 +252,16 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     // Stop polling when component unmounts (navigation away from the page)
     useEffect(() => () => { stopPolling(); }, [stopPolling]);
 
+    // Load timeline from audit trail
+    useEffect(() => {
+        if (!id) return;
+        setTimelineLoading(true);
+        complianceService.auditTrail(id, 100)
+            .then(setTimelineEntries)
+            .catch(() => setTimelineEntries([]))
+            .finally(() => setTimelineLoading(false));
+    }, [id, claim?.status]); // re-fetch when status changes
+
     const runFraud = async () => {
         setFraudLoading(true);
         try {
@@ -187,17 +275,31 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
         }
     };
 
-    const changeStatus = async (status: string) => {
+    const changeStatus = async (status: string, adjuster_notes?: string) => {
         setActionLoading(true);
         try {
-            const updated = await claimService.updateStatus(id, { status });
+            const updated = await claimService.updateStatus(id, { status, adjuster_notes });
             setClaim(updated);
+            // Refresh timeline
+            complianceService.auditTrail(id, 100).then(setTimelineEntries).catch(() => {});
         } catch (e: unknown) {
             const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
             setError(msg || "Status update failed");
         } finally {
             setActionLoading(false);
         }
+    };
+
+    const submitFlag = async () => {
+        await changeStatus("MANUAL_REVIEW_REQUIRED", flagReason.trim() || undefined);
+        setShowFlagModal(false);
+        setFlagReason("");
+    };
+
+    const submitReject = async () => {
+        await changeStatus("REJECTED", rejectReason.trim() || undefined);
+        setShowRejectModal(false);
+        setRejectReason("");
     };
 
     const handleUpload = async (e: React.FormEvent) => {
@@ -240,17 +342,30 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                         {claim && <StatusPill status={claim.status} />}
                         {canAction && claim && (
                             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                                {claim.status !== "APPROVED" && claim.status !== "SETTLED" && (
+                                {canTransitionTo(claim.status, "APPROVED") && (
                                     <button className="btn btn-ghost" onClick={() => changeStatus("APPROVED")} disabled={actionLoading} style={{ color: "var(--green)", borderColor: "var(--green-border)" }}>
                                         <CheckCircle size={13} /> Approve
                                     </button>
                                 )}
-                                <button className="btn btn-warning" onClick={() => changeStatus("MANUAL_REVIEW_REQUIRED")} disabled={actionLoading}>
-                                    <AlertTriangle size={13} /> Flag
-                                </button>
-                                {claim.status !== "REJECTED" && (
-                                    <button className="btn btn-danger" onClick={() => changeStatus("REJECTED")} disabled={actionLoading}>
+                                {canTransitionTo(claim.status, "MANUAL_REVIEW_REQUIRED") && (
+                                    <button className="btn btn-warning" onClick={() => {
+                                            setFlagReason(composeFlagReason(assessment, claim));
+                                            setShowFlagModal(true);
+                                        }} disabled={actionLoading}>
+                                            <Flag size={13} /> Flag
+                                    </button>
+                                )}
+                                {canTransitionTo(claim.status, "REJECTED") && (
+                                    <button className="btn btn-danger" onClick={() => {
+                                        setRejectReason("");
+                                        setShowRejectModal(true);
+                                    }} disabled={actionLoading}>
                                         <XCircle size={13} /> Reject
+                                    </button>
+                                )}
+                                {canTransitionTo(claim.status, "SETTLED") && (
+                                    <button className="btn btn-ghost" onClick={() => changeStatus("SETTLED")} disabled={actionLoading} style={{ color: "var(--blue)", borderColor: "var(--blue-border, var(--border))" }}>
+                                        <CircleCheck size={13} /> Settle
                                     </button>
                                 )}
                             </div>
@@ -264,8 +379,35 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                 ) : claim && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 0, height: "100%" }}>
-                        {/* Left: Claim Details + Documents */}
+                        {/* Left: Claim Details + Documents + Timeline */}
                         <div style={{ padding: 20, overflowY: "auto", borderRight: "1px solid var(--border)" }}>
+
+                            {/* Adjuster notes banner — visible to all roles */}
+                            {claim.adjuster_notes && (claim.status === "MANUAL_REVIEW_REQUIRED" || claim.status === "REJECTED") && (
+                                <div style={{
+                                    background: claim.status === "REJECTED" ? "var(--crimson-bg, rgba(220,38,38,0.08))" : "var(--amber-bg)",
+                                    border: `1px solid ${claim.status === "REJECTED" ? "var(--crimson-border, rgba(220,38,38,0.25))" : "var(--amber-border)"}`,
+                                    borderRadius: 8, padding: "14px 16px", marginBottom: 16,
+                                    display: "flex", gap: 12, alignItems: "flex-start",
+                                }}>
+                                    {claim.status === "REJECTED"
+                                        ? <XCircle size={15} color="var(--crimson)" style={{ flexShrink: 0, marginTop: 2 }} />
+                                        : <Flag size={15} color="var(--amber)" style={{ flexShrink: 0, marginTop: 2 }} />}
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ fontSize: "0.75rem", fontWeight: 700, color: claim.status === "REJECTED" ? "var(--crimson)" : "var(--amber)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                                            {claim.status === "REJECTED" ? "Claim Rejected" : "Flagged for Review"}
+                                        </div>
+                                        <p style={{ fontSize: "0.875rem", color: "var(--text-primary)", lineHeight: 1.65, margin: 0 }}>
+                                            {claim.adjuster_notes}
+                                        </p>
+                                        {!canAction && claim.status === "MANUAL_REVIEW_REQUIRED" && (
+                                            <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)", marginTop: 8, marginBottom: 0 }}>
+                                                Please upload any missing or additional documents below to continue processing your claim.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                             {/* Claim metadata */}
                             <div className="panel" style={{ padding: 18, marginBottom: 16 }}>
                                 <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14 }}>
@@ -405,6 +547,9 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     </button>
                                 </form>
                             </div>
+                            {/* Claim Timeline */}
+                            <ClaimTimeline entries={timelineEntries} loading={timelineLoading} documents={documents} claimCreatedAt={claim.created_at} />
+
                         </div>
 
                         {/* Right: Tabbed panel — Fraud | AI Assistant */}
@@ -514,6 +659,23 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                 <div style={{ flex: 1, display: rightTab === "agent" ? "flex" : "none", flexDirection: "column", overflow: "hidden" }}>
                                     {/* Report section */}
                                     <div style={{ flex: claimReport ? "0 0 55%" : 1, overflowY: "auto", padding: "14px 16px", borderBottom: (claimReport || reportLoading) ? "1px solid var(--border)" : "none" }}>
+                                        {/* Header with regenerate button */}
+                                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                            <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                                AI Claim Report
+                                            </span>
+                                            {(claimReport || reportLoaded) && (
+                                                <button
+                                                    className="btn btn-ghost"
+                                                    onClick={regenerateReport}
+                                                    disabled={reportLoading}
+                                                    style={{ padding: "3px 8px", fontSize: "0.6875rem", display: "flex", alignItems: "center", gap: 4 }}
+                                                >
+                                                    <RefreshCw size={11} style={reportLoading ? { animation: "spin 1s linear infinite" } : undefined} />
+                                                    {reportLoading ? "Generating…" : "Regenerate"}
+                                                </button>
+                                            )}
+                                        </div>
                                         {reportLoading && (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                                                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.75rem" }}>
@@ -611,6 +773,269 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                 )}
             </CommandLayout>
+
+            {/* Reject Modal */}
+            {showRejectModal && (
+                <div style={{
+                    position: "fixed", inset: 0, zIndex: 50,
+                    background: "rgba(0,0,0,0.55)", display: "flex",
+                    alignItems: "center", justifyContent: "center", padding: 24,
+                }} onClick={(e) => { if (e.target === e.currentTarget) setShowRejectModal(false); }}>
+                    <div style={{
+                        background: "var(--bg-panel)", border: "1px solid var(--border)",
+                        borderRadius: 10, width: "100%", maxWidth: 520,
+                        display: "flex", flexDirection: "column", overflow: "hidden",
+                        boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
+                    }}>
+                        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                            <XCircle size={15} color="var(--crimson)" />
+                            <span style={{ fontWeight: 700, fontSize: "0.9375rem", flex: 1 }}>Reject Claim</span>
+                            <button onClick={() => setShowRejectModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}>
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div style={{ padding: "20px" }}>
+                            <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)", marginBottom: 14, marginTop: 0, lineHeight: 1.6 }}>
+                                Optionally provide a reason for rejection. The policyholder will see this message.
+                            </p>
+                            {assessment?.explanation_text && (
+                                <button
+                                    onClick={() => setRejectReason(assessment.explanation_text || "")}
+                                    style={{
+                                        width: "100%", textAlign: "left", background: "var(--bg-surface)",
+                                        border: "1px solid var(--border)", borderRadius: 6,
+                                        padding: "10px 14px", marginBottom: 12, cursor: "pointer",
+                                        display: "flex", gap: 10, alignItems: "flex-start",
+                                    }}
+                                >
+                                    <Sparkles size={14} color="var(--blue)" style={{ flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                        <div style={{ fontSize: "0.6875rem", color: "var(--blue)", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Use AI reasoning</div>
+                                        <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{assessment.explanation_text.slice(0, 180)}{assessment.explanation_text.length > 180 ? "\u2026" : ""}</div>
+                                    </div>
+                                </button>
+                            )}
+                            <textarea
+                                className="input"
+                                rows={4}
+                                style={{ width: "100%", resize: "vertical", fontSize: "0.9rem", lineHeight: 1.65, padding: "10px 12px", boxSizing: "border-box" }}
+                                placeholder="Reason for rejection (optional)\u2026"
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                        <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                            <button className="btn btn-ghost" onClick={() => setShowRejectModal(false)}>Cancel</button>
+                            <button
+                                className="btn btn-danger"
+                                onClick={submitReject}
+                                disabled={actionLoading}
+                                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                            >
+                                {actionLoading ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <XCircle size={13} />}
+                                Confirm Reject
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Flag Modal */}
+            {showFlagModal && (
+                <div style={{
+                    position: "fixed", inset: 0, zIndex: 50,
+                    background: "rgba(0,0,0,0.55)", display: "flex",
+                    alignItems: "center", justifyContent: "center", padding: 24,
+                }} onClick={(e) => { if (e.target === e.currentTarget) setShowFlagModal(false); }}>
+                    <div style={{
+                        background: "var(--bg-panel)", border: "1px solid var(--border)",
+                        borderRadius: 10, width: "100%", maxWidth: 520,
+                        display: "flex", flexDirection: "column", overflow: "hidden",
+                        boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
+                    }}>
+                        {/* Header */}
+                        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+                            <Flag size={15} color="var(--amber)" />
+                            <span style={{ fontWeight: 700, fontSize: "0.9375rem", flex: 1 }}>Flag Claim for Review</span>
+                            <button onClick={() => setShowFlagModal(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}>
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div style={{ padding: "20px" }}>
+                            <p style={{ fontSize: "0.8125rem", color: "var(--text-muted)", marginBottom: 14, marginTop: 0, lineHeight: 1.6 }}>
+                                Provide a reason for flagging this claim. The policyholder will see this message and can upload additional documents.
+                            </p>
+
+                            {/* AI suggestion */}
+                            {assessment?.explanation_text && flagReason !== assessment.explanation_text && (
+                                <button
+                                    onClick={() => setFlagReason(assessment.explanation_text || "")}
+                                    style={{
+                                        width: "100%", textAlign: "left", background: "var(--bg-surface)",
+                                        border: "1px solid var(--border)", borderRadius: 6,
+                                        padding: "10px 14px", marginBottom: 12, cursor: "pointer",
+                                        display: "flex", gap: 10, alignItems: "flex-start",
+                                    }}
+                                >
+                                    <Sparkles size={14} color="var(--blue)" style={{ flexShrink: 0, marginTop: 2 }} />
+                                    <div>
+                                        <div style={{ fontSize: "0.6875rem", color: "var(--blue)", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Use AI reasoning</div>
+                                        <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{assessment.explanation_text.slice(0, 180)}{assessment.explanation_text.length > 180 ? "…" : ""}</div>
+                                    </div>
+                                </button>
+                            )}
+
+                            <textarea
+                                className="input"
+                                rows={5}
+                                style={{ width: "100%", resize: "vertical", fontSize: "0.9rem", lineHeight: 1.65, padding: "10px 12px", boxSizing: "border-box" }}
+                                placeholder="Describe what is missing or needs clarification…"
+                                value={flagReason}
+                                onChange={(e) => setFlagReason(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                            <button className="btn btn-ghost" onClick={() => setShowFlagModal(false)}>Cancel</button>
+                            <button
+                                className="btn btn-warning"
+                                onClick={submitFlag}
+                                disabled={actionLoading}
+                                style={{ display: "flex", alignItems: "center", gap: 6 }}
+                            >
+                                {actionLoading ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Flag size={13} />}
+                                Flag Claim
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </AuthGuard>
+    );
+}
+
+// ── Timeline Component ──────────────────────────────────────────────────────
+const ACTION_ICON: Record<string, React.ReactNode> = {
+    CLAIM_SUBMITTED: <CircleDot size={14} color="var(--blue)" />,
+    CLAIM_STATUS_CHANGED: <CircleCheck size={14} color="var(--green)" />,
+    FRAUD_ANALYZED: <ShieldAlert size={14} color="var(--amber)" />,
+    DOCUMENT_UPLOADED: <FileUp size={14} color="var(--text-muted)" />,
+    USER_LOGIN: <CircleDot size={14} color="var(--text-muted)" />,
+};
+
+const STATUS_LABEL: Record<string, string> = {
+    SUBMITTED: "Claim Submitted",
+    OCR_PROCESSED: "Documents Processed",
+    UNDER_REVIEW: "Under Review",
+    FRAUD_ANALYZED: "Fraud Analysis Complete",
+    APPROVED: "Claim Approved",
+    REJECTED: "Claim Rejected",
+    MANUAL_REVIEW_REQUIRED: "Flagged for Manual Review",
+    SETTLED: "Claim Settled",
+};
+
+function formatTimelineDate(ts: string | null | undefined) {
+    if (!ts) return "";
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function ClaimTimeline({ entries, loading, documents, claimCreatedAt }: {
+    entries: AuditLogEntry[]; loading: boolean;
+    documents: DocumentResponse[]; claimCreatedAt: string;
+}) {
+    // Build timeline events from audit entries
+    const events = entries
+        .filter((e) => e.action_type !== "USER_LOGIN")
+        .map((e) => {
+            let title = e.action_type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+            let detail = "";
+            let color = "var(--text-muted)";
+            let icon = ACTION_ICON[e.action_type] || <CircleDot size={14} color="var(--text-muted)" />;
+
+            if (e.action_type === "CLAIM_STATUS_CHANGED" && e.metadata) {
+                const to = e.metadata.to as string;
+                const from = e.metadata.from as string;
+                title = STATUS_LABEL[to] || to.replace(/_/g, " ");
+                detail = from ? `Status changed from ${from.replace(/_/g, " ")}` : "";
+                if (e.metadata.notes) detail = e.metadata.notes as string;
+                color = to === "APPROVED" || to === "SETTLED" ? "var(--green)"
+                    : to === "REJECTED" ? "var(--crimson)"
+                    : to === "MANUAL_REVIEW_REQUIRED" ? "var(--amber)"
+                    : "var(--blue)";
+                icon = to === "APPROVED" || to === "SETTLED"
+                    ? <CircleCheck size={14} color="var(--green)" />
+                    : to === "REJECTED" ? <CircleX size={14} color="var(--crimson)" />
+                    : to === "MANUAL_REVIEW_REQUIRED" ? <Flag size={14} color="var(--amber)" />
+                    : <CircleDot size={14} color="var(--blue)" />;
+            } else if (e.action_type === "DOCUMENT_UPLOADED") {
+                const docType = e.metadata?.document_type as string | undefined;
+                detail = docType ? docType.replace(/_/g, " ") : "";
+            } else if (e.action_type === "FRAUD_ANALYZED") {
+                const score = e.metadata?.fraud_score as number | undefined;
+                detail = score !== undefined ? `Score: ${(score * 100).toFixed(0)}%` : "";
+                color = "var(--amber)";
+            }
+
+            return { id: e.id, title, detail, color, icon, timestamp: e.timestamp };
+        })
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    return (
+        <div className="panel" style={{ padding: 18, marginTop: 16 }}>
+            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
+                <Clock size={12} />
+                Claim Timeline
+            </div>
+
+            {loading && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                            <div className="skeleton" style={{ width: 14, height: 14, borderRadius: "50%", flexShrink: 0 }} />
+                            <div style={{ flex: 1 }}><div className="skeleton" style={{ height: 12, width: "60%", marginBottom: 6 }} /><div className="skeleton" style={{ height: 10, width: "40%" }} /></div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {!loading && events.length === 0 && (
+                <div style={{ color: "var(--text-muted)", fontSize: "0.8125rem", textAlign: "center", padding: "12px 0" }}>No events yet</div>
+            )}
+
+            {!loading && events.length > 0 && (
+                <div style={{ position: "relative" }}>
+                    {/* Vertical line */}
+                    <div style={{ position: "absolute", left: 7, top: 16, bottom: 4, width: 1, background: "var(--border)" }} />
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                        {events.map((evt, idx) => (
+                            <div key={evt.id} style={{ display: "flex", gap: 14, paddingBottom: idx < events.length - 1 ? 18 : 0, position: "relative" }}>
+                                {/* Dot */}
+                                <div style={{ flexShrink: 0, width: 15, display: "flex", justifyContent: "center", paddingTop: 1, zIndex: 1, background: "var(--bg-panel)" }}>
+                                    {evt.icon}
+                                </div>
+                                {/* Content */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: "0.875rem", fontWeight: 600, color: evt.color, lineHeight: 1.4 }}>{evt.title}</div>
+                                    {evt.detail && (
+                                        <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.55 }}>{evt.detail}</div>
+                                    )}
+                                    <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: 4, fontFamily: "var(--font-mono)" }}>
+                                        {formatTimelineDate(evt.timestamp)}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }

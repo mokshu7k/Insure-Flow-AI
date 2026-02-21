@@ -56,10 +56,12 @@ async def audit_trail(
     return [
         {
             "id": str(log.id),
+            "actor_id": str(log.actor_id) if log.actor_id else None,
             "action_type": log.action_type,
             "entity_type": log.entity_type,
             "entity_id": str(log.entity_id) if log.entity_id else None,
-            "created_at": log.created_at.isoformat() if log.created_at else None,
+            "metadata": log.metadata_ if log.metadata_ else {},
+            "timestamp": log.created_at.isoformat() if log.created_at else None,
         }
         for log in logs
     ]

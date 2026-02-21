@@ -277,16 +277,16 @@ async def _extract(content: bytes, content_type: str, doc_type: str) -> dict[str
     Gemini returns a structured JSON object which we store.
     """
     import asyncio
-    import base64
     import io
     import json
     from functools import partial
 
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types as _genai_types
         from app.config import settings
 
-        genai.configure(api_key=settings.GCP_API_KEY)
+        _client = genai.Client(api_key=settings.GCP_API_KEY)
 
         # ── Step 1: Determine MIME type and prepare content part ──────────────
         is_pdf = content[:4] == b"%PDF" or "pdf" in (content_type or "").lower()
@@ -294,8 +294,7 @@ async def _extract(content: bytes, content_type: str, doc_type: str) -> dict[str
         doc_text = ""  # Keep track of extracted text for validation
         if is_pdf:
             mime = "application/pdf"
-            blob_data = base64.standard_b64encode(content).decode("utf-8")
-            content_part = {"inline_data": {"mime_type": mime, "data": blob_data}}
+            content_part = _genai_types.Part.from_bytes(data=content, mime_type=mime)
             method = "gemini-native-pdf"
         else:
             # Non-PDF: try to get text via pypdf fallback, else raw bytes
@@ -314,39 +313,65 @@ async def _extract(content: bytes, content_type: str, doc_type: str) -> dict[str
             method = "gemini-text"
 
         # ── Step 2: Build Gemini prompt ────────────────────────────────────────
+        # Tailor the field list to the document type so Gemini focuses on what matters
+        _type_hints = {
+            "DISCHARGE_SUMMARY": (
+                "patient_name, date_of_admission, date_of_discharge, "
+                "hospital_name, ward_department, treating_doctor, diagnosis, "
+                "procedures_performed, total_bill_amount, discharge_condition"
+            ),
+            "INVOICE": (
+                "hospital_name, patient_name, invoice_number, invoice_date, "
+                "total_amount, itemised_charges, gst_amount, payable_amount"
+            ),
+            "MEDICAL_REPORT": (
+                "patient_name, report_date, lab_name, test_name, "
+                "results_summary, reference_range, ordering_doctor"
+            ),
+            "PRESCRIPTION": (
+                "patient_name, doctor_name, clinic_name, prescription_date, "
+                "medications_list, dosage_instructions, diagnosis"
+            ),
+            "POLICE_REPORT": (
+                "complainant_name, fir_number, date_of_incident, "
+                "place_of_incident, description_of_incident, officer_name, police_station"
+            ),
+        }
+        field_guidance = _type_hints.get(
+            doc_type.upper(),
+            (
+                "patient_name / claimant_name, date_of_service / date_of_incident, "
+                "provider_name / hospital_name, diagnosis / incident_description, "
+                "total_amount, policy_number, claim_number, document_id, address, phone_number"
+            ),
+        )
         prompt = f"""You are an insurance document parser. Carefully read the attached {doc_type} document and extract ALL key structured fields.
 
-Extract the following fields (use null if not found):
-- patient_name / claimant_name
-- date_of_service / date_of_incident
-- provider_name / hospital_name
-- diagnosis / incident_description
-- total_amount (numeric value only)
-- policy_number
-- claim_number / reference_number
-- document_id / id_number
-- address
-- phone_number
-- any other significant identifiers
+This is a {doc_type} document. Extract the following fields (use null if not found):
+{field_guidance}
+
+Also extract any other significant identifiers or amounts present in the document.
 
 Respond ONLY with a valid JSON object like:
 {{
   "patient_name": {{\"text\": \"...\"}},
-  "date_of_service": {{\"text\": \"...\"}},
+  "date_of_admission": {{\"text\": \"...\"}},
   "total_amount": {{\"text\": \"...\", \"value\": 0.0}},
   ...
 }}
 Do not include any explanation or markdown — only the raw JSON object."""
 
         # ── Step 3: Call Gemini in a threadpool ────────────────────────────────
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
-
         def _call_gemini():
-            response = model.generate_content([content_part, prompt])
+            response = _client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[content_part, prompt],
+            )
             return response.text
 
         loop = asyncio.get_running_loop()
         raw_text = await loop.run_in_executor(None, _call_gemini)
+        logger.info("Gemini raw response for %s (first 500 chars): %s", doc_type, raw_text[:500])
 
         # ── Step 4: Parse JSON response ────────────────────────────────────────
         # Strip markdown fences if Gemini wrapped the response
@@ -367,11 +392,11 @@ Do not include any explanation or markdown — only the raw JSON object."""
         fields = {k: v for k, v in fields.items() if v and v != {"text": None}}
 
         confidence = 0.90 if fields else 0.0
-        logger.info("Extraction complete: %d fields via %s", len(fields), method)
-        return {"fields": fields, "confidence": confidence, "method": method, "raw_text": raw_text[:1000]}  # First 1000 chars
+        logger.info("Extraction complete: %d fields (%s) via %s", len(fields), list(fields.keys()), method)
+        return {"fields": fields, "confidence": confidence, "method": method, "raw_text": raw_text[:2000]}
 
     except ImportError:
-        logger.error("google-generativeai not installed — run: pip install google-generativeai")
+        logger.error("google-genai not installed — run: pip install google-genai")
     except Exception as exc:
         logger.warning("Gemini extraction failed: %s", exc, exc_info=True)
 

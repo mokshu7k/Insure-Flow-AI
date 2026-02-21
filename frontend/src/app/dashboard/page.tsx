@@ -38,8 +38,11 @@ function fmtL(n: number) {
     if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
     return `₹${n.toFixed(0)}`;
 }
-function fmtDate(s: string) {
-    return new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
+function fmtDate(s: string | null | undefined) {
+    if (!s) return "—";
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" });
 }
 
 // ── Entry point — role-switches inside ────────────────────

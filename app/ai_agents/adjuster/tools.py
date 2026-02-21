@@ -167,41 +167,49 @@ async def generate_report(claim_id: str, *, db, adjuster_id: str) -> dict[str, A
             model="gemini-2.5-flash",
             google_api_key=settings.GCP_API_KEY,
             temperature=0.2,
+            max_output_tokens=5000,
         )
 
-        prompt = f"""You are a senior insurance claims adjuster AI. Write a comprehensive claim processing report in Markdown.
+        prompt = f"""You are a senior insurance claims adjuster AI. Write a concise claim processing report in PLAIN TEXT only.
 
-## Input Data
+IMPORTANT FORMATTING RULES:
+- Do NOT use any Markdown formatting (no #, *, **, ```, ---, etc.)
+- Use plain text headings in ALL CAPS followed by a blank line
+- Use simple dashes (-) for bullet points
+- Use plain text for emphasis (e.g. write APPROVE not **APPROVE**)
+- Keep the entire report under 3000 words
 
-### Claim
+=== INPUT DATA ===
+
+CLAIM:
 {claim}
 
-### Claimant History ({history.get('total_claims', 0)} total claims)
+CLAIMANT HISTORY ({history.get('total_claims', 0)} total claims):
 {history.get('claims', [])}
 
-### Documents ({docs.get('document_count', 0)} uploaded)
+DOCUMENTS ({docs.get('document_count', 0)} uploaded):
 {docs.get('documents', [])}
 
-### Fraud Assessment
+FRAUD ASSESSMENT:
 Score: {fraud.get('fraud_score', 'N/A')} | Risk: {fraud.get('risk_level', 'N/A')}
 Explanation: {fraud.get('explanation', 'N/A')}
 Signals: deterministic={fraud.get('deterministic_signals', [])}, behavioral={fraud.get('behavioral_flags', [])}, document={fraud.get('document_flags', [])}
 
-### Verification Report
+VERIFICATION REPORT:
 {verification}
 
----
+=== REPORT SECTIONS ===
 
 Write the report with these exact sections:
-1. **Claimant Summary** — Who they are, policy, history pattern
-2. **Claim Details** — What they are claiming and why
-3. **Document Analysis** — What the AI extracted, any gaps or issues
-4. **Discrepancies Found** — Mismatches between claim and documents
-5. **Fraud Assessment Breakdown** — Per-signal explanation in plain English
-6. **AI Recommendation** — One of: APPROVE / FLAG_FOR_REVIEW / REJECT with reason
-7. **Action Items** — Specific steps the adjuster should take
+1. CLAIMANT SUMMARY - Who they are, policy, history pattern
+2. CLAIM DETAILS - What they are claiming and why
+3. DOCUMENT ANALYSIS - What the AI extracted, any gaps or issues
+4. DISCREPANCIES FOUND - Mismatches between claim and documents
+5. FRAUD ASSESSMENT BREAKDOWN - Per-signal explanation in plain English
+6. AI RECOMMENDATION - One of: APPROVE / FLAG_FOR_REVIEW / REJECT with reason
+7. ACTION ITEMS - Specific steps the adjuster should take
 
-Be concise, factual, and professional. Use tables where appropriate."""
+Be concise, factual, and professional. No Markdown."""
 
         response = await llm.ainvoke(prompt)
         content = response.content
