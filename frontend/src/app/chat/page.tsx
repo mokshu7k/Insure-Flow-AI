@@ -323,8 +323,6 @@ function ChatContent() {
                                             display: "flex", gap: 6, alignItems: "center",
                                         }}>
                                             <Loader2 size={15} className="animate-spin" style={{ color: "var(--text-muted)" }} />
-                                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Thinkingâ€¦</span>
-                                            <Loader2 size={13} style={{ animation: "spin 1s linear infinite", color: "var(--text-muted)" }} />
                                             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Thinking…</span>
                                         </div>
                                     </div>
@@ -510,26 +508,55 @@ function AgentAvatar() {
     );
 }
 
+function renderAgentContent(content: string): React.ReactNode {
+    // Normalise: move inline → bullets onto their own lines, split concatenated sentences
+    const normalized = content
+        .replace(/([^\n])→\s*/g, "$1\n→ ")       // "text→ item" → "text\n→ item"
+        .replace(/\.\s*([A-Z][a-z])/g, ".\n$1")  // ".Next sentence" → ".\nNext sentence"
+        .trim();
+
+    const lines = normalized.split("\n").filter((l) => l.trim() !== "");
+
+    const nodes: React.ReactNode[] = [];
+    let bullets: string[] = [];
+
+    const flushBullets = (key: string) => {
+        if (!bullets.length) return;
+        const captured = bullets.slice();
+        bullets = [];
+        nodes.push(
+            <ul key={key} style={{ margin: "8px 0 0", padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+                {captured.map((item, i) => (
+                    <li key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                        <span style={{ color: "var(--blue)", flexShrink: 0, lineHeight: 1.65 }}>→</span>
+                        <span style={{ lineHeight: 1.65 }}>{item}</span>
+                    </li>
+                ))}
+            </ul>
+        );
+    };
+
+    lines.forEach((line, i) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("→")) {
+            bullets.push(trimmed.replace(/^→\s*/, ""));
+        } else {
+            flushBullets(`ul-${i}`);
+            nodes.push(
+                <p key={`p-${i}`} style={{ margin: nodes.length > 0 ? "6px 0 0" : "0", lineHeight: 1.65 }}>
+                    {trimmed}
+                </p>
+            );
+        }
+    });
+    flushBullets("ul-end");
+
+    return <>{nodes}</>;
+}
+
 function MessageBubble({ msg }: { msg: Message }) {
     const isUser = msg.role === "user";
-    
-    // Format content: ensure → markers start on new lines
-    const formatContent = (text: string) => {
-        return text
-            .split('\n')
-            .map((line, i) => {
-                const trimmed = line.trim();
-                // If line starts with →, ensure it's properly indented
-                if (trimmed.startsWith('→')) {
-                    return trimmed;
-                }
-                return line;
-            })
-            .join('\n');
-    };
-    
-    const formattedContent = formatContent(msg.content);
-    
+
     return (
         <div style={{
             display: "flex", alignItems: "flex-start", gap: 10,
@@ -554,11 +581,12 @@ function MessageBubble({ msg }: { msg: Message }) {
                 borderRadius: isUser ? "14px 6px 6px 14px" : "6px 14px 14px 6px",
                 padding: "12px 16px",
                 fontSize: "0.9375rem",
-                lineHeight: 1.65,
-                whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
             }}>
-                {formattedContent}
+                {isUser
+                    ? <span style={{ whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{msg.content}</span>
+                    : renderAgentContent(msg.content)
+                }
                 <div style={{
                     fontSize: "0.6875rem",
                     color: isUser ? "rgba(255,255,255,0.6)" : "var(--text-muted)",
