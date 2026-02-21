@@ -88,7 +88,10 @@ api.interceptors.response.use(
         }
 
         // Log only errors that are NOT handled by the refresh flow above
-        console.error("[api] ✗", status, original?.url, error.response?.data ?? error.message);
+        // Skip logging for requests that opted in to quiet mode (expected 404s etc.)
+        if (!original?._quiet) {
+            console.error("[api] ✗", status, original?.url, error.response?.data ?? error.message);
+        }
         return Promise.reject(error);
     }
 );

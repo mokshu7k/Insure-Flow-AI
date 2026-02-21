@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.dependencies import get_current_user
 from app.models.fraud import FraudAssessment
 from app.models.user import User
+from typing import Optional
 from app.schemas.fraud import FraudAssessmentResponse, FraudAnalysisQueued
 from app.services import fraud_service
 import uuid
@@ -29,17 +30,13 @@ async def analyze_claim(
     return assessment
 
 
-@router.get("/{claim_id}", response_model=FraudAssessmentResponse)
+@router.get("/{claim_id}", response_model=Optional[FraudAssessmentResponse])
 async def get_assessment(
     claim_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.core.exceptions import NotFoundError
     result = await db.execute(
         select(FraudAssessment).where(FraudAssessment.claim_id == uuid.UUID(claim_id))
     )
-    assessment = result.scalar_one_or_none()
-    if not assessment:
-        raise NotFoundError("No fraud assessment for this claim")
-    return assessment
+    return result.scalar_one_or_none()  # None → 200 null, no 404

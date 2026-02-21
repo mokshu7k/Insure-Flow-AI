@@ -18,13 +18,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add provider_id column to claims table
-    op.add_column('claims', sa.Column('provider_id', sa.UUID(), nullable=True))
-    op.create_foreign_key(
-        'fk_claims_provider_id', 'claims', 'users',
-        ['provider_id'], ['id']
-    )
-    op.create_index('ix_claims_provider_id', 'claims', ['provider_id'])
+    op.execute("ALTER TABLE claims ADD COLUMN IF NOT EXISTS provider_id UUID")
+    op.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'fk_claims_provider_id'
+            ) THEN
+                ALTER TABLE claims ADD CONSTRAINT fk_claims_provider_id
+                    FOREIGN KEY (provider_id) REFERENCES users(id);
+            END IF;
+        END $$
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_claims_provider_id ON claims(provider_id)")
 
 
 def downgrade() -> None:

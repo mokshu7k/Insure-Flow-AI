@@ -132,5 +132,5 @@ export interface ConsentRecord { id: string; version: string; timestamp: string;
 
 // ── Adjuster Agent ────────────────────────────────
 export interface AdjusterChatRequest { message: string; claim_id?: string; }
-export interface AdjusterChatResponse { response: string; claim_id?: string; }
-export interface AdjusterReportResponse { report: string; claim_id: string; generated_at: string; }
+export interface AdjusterChatResponse { response: string; report?: string | null; }
+export interface AdjusterReportResponse { report: string | null; claim_id: string; cached: boolean; generated_at?: string; }

@@ -76,9 +76,16 @@ async def get_audit_trail(
     role: str,
     db: AsyncSession,
     limit: int = 50,
+    entity_id: str | None = None,
 ) -> list[AuditLog]:
     q = select(AuditLog)
-    if role == "CUSTOMER":
+    if entity_id:
+        # Filter to a specific claim / entity so each claim's audit trail is isolated
+        try:
+            q = q.where(AuditLog.entity_id == uuid.UUID(entity_id))
+        except ValueError:
+            q = q.where(AuditLog.entity_id == None)  # noqa: E711
+    elif role == "CUSTOMER":
         q = q.where(AuditLog.actor_id == uuid.UUID(user_id))
     q = q.order_by(desc(AuditLog.created_at)).limit(limit)
     result = await db.execute(q)

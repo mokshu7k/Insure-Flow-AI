@@ -9,6 +9,7 @@ from typing import Any
 
 from langgraph.graph import END, StateGraph
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
 from app.ai_agents.adjuster.state import AdjusterState
@@ -98,7 +99,7 @@ _TOOL_DISPATCH: dict[str, Any] = {
 
 # ── Graph nodes ──────────────────────────────────────────────────────────────
 
-async def gemini_node(state: AdjusterState, config: dict) -> dict:
+async def gemini_node(state: AdjusterState, config: RunnableConfig) -> dict:
     """Main Gemini node — decides which tools to call and generates a final reply."""
     try:
         llm = _get_llm()
@@ -136,7 +137,7 @@ async def gemini_node(state: AdjusterState, config: dict) -> dict:
         return {"messages": [err_msg]}
 
 
-async def tool_execution_node(state: AdjusterState, config: dict) -> dict:
+async def tool_execution_node(state: AdjusterState, config: RunnableConfig) -> dict:
     """Execute all pending tool calls from the last Gemini message."""
     db = config["configurable"].get("db")
     adjuster_id = state["adjuster_id"]
