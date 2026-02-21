@@ -1,19 +1,20 @@
 "use client";
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { CommandLayout } from "@/components/layout/CommandLayout";
 import { AuditTrailPanel } from "@/components/layout/AuditTrailPanel";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { FraudScoreBadge, StatusPill, MonoValue } from "@/components/ui";
 import { EditableExtractedData } from "@/components/ui/EditableExtractedData";
-import { useAuthStore, useIsAdmin } from "@/store/authStore";
+import { useIsAdmin, useIsAdjuster } from "@/store/authStore";
 import { fraudService } from "@/services/fraudService";
 import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
+import { adjusterService } from "@/services/adjusterService";
 import type { Claim, FraudAssessment, DocumentResponse } from "@/types";
 import {
     ArrowLeft, Zap, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
-    ChevronDown, ChevronUp, Lock
+    ChevronDown, ChevronUp, Send, Loader2
 } from "lucide-react";
 
 function formatCurrency(n: number | null) {
@@ -63,6 +64,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const { id } = use(params);
     const router = useRouter();
     const isAdmin = useIsAdmin();
+    const isAdjuster = useIsAdjuster();
+    const canAction = isAdmin || isAdjuster;
     const [claim, setClaim] = useState<Claim | null>(null);
     const [assessment, setAssessment] = useState<FraudAssessment | null>(null);
     const [documents, setDocuments] = useState<DocumentResponse[]>([]);
@@ -75,6 +78,16 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [uploading, setUploading] = useState(false);
     const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
     const [docError, setDocError] = useState<string | null>(null);
+    // Right-panel tabs
+    const [rightTab, setRightTab] = useState<"fraud" | "agent">("fraud");
+    // Adjuster report + follow-up chat state
+    const [claimReport, setClaimReport] = useState<string | null>(null);
+    const [reportLoading, setReportLoading] = useState(false);
+    const [reportLoaded, setReportLoaded] = useState(false);
+    const [agentMessages, setAgentMessages] = useState<{ role: "user" | "ai"; content: string }[]>([]);
+    const [agentInput, setAgentInput] = useState("");
+    const [agentSending, setAgentSending] = useState(false);
+    const agentBottomRef = useRef<HTMLDivElement>(null);
 
     const load = async () => {
         setLoading(true);
@@ -85,17 +98,53 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
             ]);
             setClaim(c);
             setDocuments(docs);
-            // Try to fetch existing fraud assessment
-            try {
-                const a = await fraudService.getAssessment(id);
-                setAssessment(a);
-            } catch { /* 404 is fine */ }
+            // Fetch existing fraud assessment (null if none yet)
+            const a = await fraudService.getAssessment(id);
+            if (a) setAssessment(a);
         } catch (e: unknown) {
             setError("Claim not found");
         } finally {
             setLoading(false);
         }
     };
+
+    // Scroll agent chat to bottom
+    useEffect(() => { agentBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [agentMessages]);
+
+    // Load the AI claim report when the tab is first opened (returns cached if already generated)
+    const loadReport = useCallback(async () => {
+        if (reportLoaded || !id) return;
+        setReportLoaded(true);
+        setReportLoading(true);
+        try {
+            const res = await adjusterService.generateReport(id);
+            setClaimReport(res.report || null);
+        } catch {
+            setClaimReport(null);
+        } finally {
+            setReportLoading(false);
+        }
+    }, [reportLoaded, id]);
+
+    useEffect(() => {
+        if (rightTab === "agent" && canAction) loadReport();
+    }, [rightTab, canAction, loadReport]);
+
+    const sendAgentMessage = useCallback(async (text: string) => {
+        const trimmed = text.trim();
+        if (!trimmed || agentSending) return;
+        setAgentInput("");
+        setAgentMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+        setAgentSending(true);
+        try {
+            const res = await adjusterService.chat({ message: trimmed, claim_id: id });
+            setAgentMessages((prev) => [...prev, { role: "ai", content: res.response }]);
+        } catch {
+            setAgentMessages((prev) => [...prev, { role: "ai", content: "Error processing request. Please try again." }]);
+        } finally {
+            setAgentSending(false);
+        }
+    }, [agentSending, id]);
 
     useEffect(() => { load(); }, [id]);
 
@@ -159,7 +208,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                             {claim?.id.slice(0, 8)}…
                         </span>
                         {claim && <StatusPill status={claim.status} />}
-                        {isAdmin && claim && (
+                        {canAction && claim && (
                             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                                 {claim.status !== "APPROVED" && claim.status !== "SETTLED" && (
                                     <button className="btn btn-ghost" onClick={() => changeStatus("APPROVED")} disabled={actionLoading} style={{ color: "var(--green)", borderColor: "var(--green-border)" }}>
@@ -291,14 +340,41 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                             </div>
                         </div>
 
-                        {/* Right: Fraud Analysis Panel */}
-                        <div style={{ padding: 20, overflowY: "auto" }}>
+                        {/* Right: Tabbed panel — Fraud | AI Assistant */}
+                        <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                            {/* Tab bar */}
+                            {canAction && (
+                                <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                                    {(["fraud", "agent"] as const).map((tab) => (
+                                        <button
+                                            key={tab}
+                                            onClick={() => setRightTab(tab)}
+                                            style={{
+                                                flex: 1,
+                                                padding: "9px 0",
+                                                fontSize: "0.6875rem",
+                                                fontWeight: 600,
+                                                textTransform: "uppercase",
+                                                letterSpacing: "0.06em",
+                                                background: "none",
+                                                border: "none",
+                                                borderBottom: rightTab === tab ? "2px solid var(--blue)" : "2px solid transparent",
+                                                color: rightTab === tab ? "var(--blue)" : "var(--text-muted)",
+                                                cursor: "pointer",
+                                            }}
+                                        >
+                                            {tab === "fraud" ? "Fraud" : "Claim Report"}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        <div style={{ flex: 1, overflowY: "auto", padding: 20, display: rightTab === "fraud" || !canAction ? "block" : "none" }}>
                             {/* Fraud score header */}
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                                 <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                                     Fraud Intelligence
                                 </div>
-                                {isAdmin && (
+                                {canAction && (
                                     <button className="btn btn-ghost" onClick={runFraud} disabled={fraudLoading} style={{ padding: "4px 10px" }}>
                                         <Zap size={13} />
                                         {fraudLoading ? "Analyzing…" : assessment ? "Re-run" : "Analyze"}
@@ -308,7 +384,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
 
                             {!assessment && !fraudLoading && (
                                 <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                                    {isAdmin ? "Run fraud analysis to see intelligence" : "No fraud assessment available"}
+                                    {canAction ? "Run fraud analysis to see intelligence" : "No fraud assessment available"}
                                 </div>
                             )}
 
@@ -364,7 +440,90 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     </div>
                                 </>
                             )}
-                        </div>
+                        </div>{/* end fraud tab */}
+
+                            {/* Claim Report tab — auto-generated report + follow-up chat */}
+                            {canAction && (
+                                <div style={{ flex: 1, display: rightTab === "agent" ? "flex" : "none", flexDirection: "column", overflow: "hidden" }}>
+                                    {/* Report section */}
+                                    <div style={{ flex: claimReport ? "0 0 55%" : 1, overflowY: "auto", padding: "14px 16px", borderBottom: (claimReport || reportLoading) ? "1px solid var(--border)" : "none" }}>
+                                        {reportLoading && (
+                                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.75rem" }}>
+                                                    <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                                                    Generating claim report…
+                                                </div>
+                                                {[...Array(8)].map((_, i) => <div key={i} className="skeleton" style={{ height: 11, marginBottom: 6 }} />)}
+                                            </div>
+                                        )}
+                                        {!reportLoading && claimReport && (
+                                            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "inherit" }}>
+                                                {claimReport}
+                                            </div>
+                                        )}
+                                        {!reportLoading && !claimReport && reportLoaded && (
+                                            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
+                                                Report generation failed. Ask a question below.
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Follow-up chat — only shown once report is loaded */}
+                                    {(claimReport || reportLoaded) && (
+                                        <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                                            {agentMessages.length === 0 && claimReport && (
+                                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>
+                                                    Ask a follow-up question about this report
+                                                </div>
+                                            )}
+                                            {agentMessages.map((m, i) => (
+                                                <div key={i} style={{
+                                                    alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                                                    maxWidth: "92%",
+                                                    background: m.role === "user" ? "var(--blue)" : "var(--bg-surface)",
+                                                    color: m.role === "user" ? "#fff" : "var(--text-primary)",
+                                                    border: m.role === "user" ? "none" : "1px solid var(--border)",
+                                                    borderRadius: m.role === "user" ? "10px 4px 10px 10px" : "4px 10px 10px 10px",
+                                                    padding: "7px 11px",
+                                                    fontSize: "0.75rem",
+                                                    lineHeight: 1.5,
+                                                    whiteSpace: "pre-wrap",
+                                                    wordBreak: "break-word",
+                                                }}>
+                                                    {m.content}
+                                                </div>
+                                            ))}
+                                            {agentSending && (
+                                                <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-muted)", fontSize: "0.75rem", alignSelf: "flex-start" }}>
+                                                    <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                                                    Thinking…
+                                                </div>
+                                            )}
+                                            <div ref={agentBottomRef} />
+                                        </div>
+                                    )}
+                                    {/* Input */}
+                                    <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)", display: "flex", gap: 6 }}>
+                                        <input
+                                            className="input"
+                                            style={{ flex: 1, height: 32, fontSize: "0.8125rem" }}
+                                            value={agentInput}
+                                            onChange={(e) => setAgentInput(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === "Enter") sendAgentMessage(agentInput); }}
+                                            placeholder="Ask a follow-up about this claim…"
+                                            disabled={agentSending || reportLoading}
+                                        />
+                                        <button
+                                            className="btn btn-primary"
+                                            style={{ height: 32, padding: "0 10px" }}
+                                            disabled={!agentInput.trim() || agentSending || reportLoading}
+                                            onClick={() => sendAgentMessage(agentInput)}
+                                        >
+                                            <Send size={13} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>{/* end right tabbed panel */}
                     </div>
                 )}
             </CommandLayout>

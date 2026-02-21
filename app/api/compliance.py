@@ -44,11 +44,14 @@ async def check_consent(
 
 @router.get("/audit", response_model=list[dict])
 async def audit_trail(
+    entity_id: str | None = None,
+    limit: int = 50,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     logs = await compliance_service.get_audit_trail(
-        str(current_user.id), str(current_user.id), current_user.role, db
+        str(current_user.id), str(current_user.id), current_user.role, db,
+        entity_id=entity_id, limit=limit,
     )
     return [
         {

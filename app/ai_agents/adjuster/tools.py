@@ -204,7 +204,12 @@ Write the report with these exact sections:
 Be concise, factual, and professional. Use tables where appropriate."""
 
         response = await llm.ainvoke(prompt)
-        return {"report": response.content}
+        content = response.content
+        if isinstance(content, list):
+            content = "".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+            ).strip()
+        return {"report": content}
     except Exception as exc:
         logger.error("generate_report LLM error: %s", exc)
         return {"error": f"Report generation failed: {exc}"}

@@ -19,21 +19,26 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add cashless-specific columns to qr_tokens
-    op.add_column('qr_tokens', sa.Column('provider_id', sa.UUID(), nullable=True))
-    op.add_column('qr_tokens', sa.Column('status', sa.String(length=32), nullable=True))
-    op.add_column('qr_tokens', sa.Column('estimate_data', postgresql.JSONB(astext_type=sa.Text()), nullable=True))
-    op.add_column('qr_tokens', sa.Column('patient_name', sa.String(length=255), nullable=True))
-    op.add_column('qr_tokens', sa.Column('procedure_name', sa.String(length=255), nullable=True))
-    op.add_column('qr_tokens', sa.Column('hospital_name', sa.String(length=255), nullable=True))
-    op.add_column('qr_tokens', sa.Column('insurer_notes', sa.Text(), nullable=True))
-
-    op.create_foreign_key(
-        'fk_qr_tokens_provider_id', 'qr_tokens', 'users',
-        ['provider_id'], ['id']
-    )
-    op.create_index('ix_qr_tokens_provider_id', 'qr_tokens', ['provider_id'])
-    op.create_index('ix_qr_tokens_status', 'qr_tokens', ['status'])
+    op.execute("ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS provider_id UUID")
+    op.execute("ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS status VARCHAR(32)")
+    op.execute("ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS estimate_data JSONB")
+    op.execute("ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS patient_name VARCHAR(255)")
+    op.execute("ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS procedure_name VARCHAR(255)")
+    op.execute("ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS hospital_name VARCHAR(255)")
+    op.execute("ALTER TABLE qr_tokens ADD COLUMN IF NOT EXISTS insurer_notes TEXT")
+    op.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'fk_qr_tokens_provider_id'
+            ) THEN
+                ALTER TABLE qr_tokens ADD CONSTRAINT fk_qr_tokens_provider_id
+                    FOREIGN KEY (provider_id) REFERENCES users(id);
+            END IF;
+        END $$
+    """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_qr_tokens_provider_id ON qr_tokens(provider_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_qr_tokens_status ON qr_tokens(status)")
 
 
 def downgrade() -> None:

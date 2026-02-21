@@ -25,6 +25,7 @@ class Claim(Base):
     status: Mapped[str] = mapped_column(String(32), default="SUBMITTED", nullable=False)
     fraud_score: Mapped[float | None] = mapped_column(Numeric(5, 4), nullable=True)
     verified_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ai_report: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=_utcnow,
