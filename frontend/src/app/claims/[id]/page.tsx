@@ -57,7 +57,7 @@ function LayerScoreRow({ name, score, flags }: { name: string; score: number; fl
             {expanded && flags.length > 0 && (
                 <div style={{ marginTop: 6, paddingLeft: 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
                     {flags.map((f, i) => (
-                        <span key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "2rem", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 3, padding: "2px 6px", color: "var(--text-secondary)" }}>
+                        <span key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 3, padding: "2px 6px", color: "var(--text-secondary)" }}>
                             {f}
                         </span>
                     ))}
@@ -620,7 +620,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                         <div style={{ flex: 1, overflowY: "auto", padding: 20, display: rightTab === "fraud" || !canAction ? "block" : "none" }}>
                             {/* Fraud score header */}
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                                <div style={{ fontSize: "2rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                                     Fraud Intelligence
                                 </div>
                                 {canAction && (
@@ -632,13 +632,13 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                             </div>
 
                             {!assessment && !fraudLoading && (
-                                <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: "2rem" }}>
+                                <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
                                     {canAction ? "Run fraud analysis to see intelligence" : "No fraud assessment available"}
                                 </div>
                             )}
 
                             {fraudLoading && (
-                                <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "2rem" }}>
+                                <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
                                     <div className="skeleton" style={{ height: 80, marginBottom: 12 }} />
                                     {[...Array(6)].map((_, i) => <div key={i} className="skeleton" style={{ height: 12, marginBottom: 10 }} />)}
                                 </div>
@@ -662,7 +662,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     {/* Layer scores */}
                                     {assessment.layer_scores && (
                                         <div style={{ marginBottom: 16 }}>
-                                            <div style={{ fontSize: "2rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
+                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
                                                 Layer Breakdown
                                             </div>
                                             {Object.entries(assessment.layer_scores).map(([name, layer]) => (
@@ -674,15 +674,15 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     {/* AI Explanation */}
                                     {assessment.explanation_text && (
                                         <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 14, marginBottom: 14 }}>
-                                            <div style={{ fontSize: "2rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
+                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
                                                 AI Explanation
                                             </div>
-                                            <p style={{ fontSize: "2rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{assessment.explanation_text}</p>
+                                            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{assessment.explanation_text}</p>
                                         </div>
                                     )}
 
                                     {/* Meta */}
-                                    <div style={{ fontSize: "2rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", display: "flex", flexDirection: "column", gap: 3 }}>
+                                    <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", display: "flex", flexDirection: "column", gap: 3 }}>
                                         {assessment.config_version && <span>Config: {assessment.config_version}</span>}
                                         {assessment.ai_degraded_mode && <span style={{ color: "var(--amber)" }}>⚠ AI degraded mode</span>}
                                         <span>Assessed: {formatDateTime(assessment.created_at)}</span>
@@ -700,7 +700,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                                 <Sparkles size={16} color="var(--blue)" />
-                                                <span style={{ fontSize: "2rem", color: "var(--text-primary)", fontWeight: 700 }}>
+                                                <span style={{ fontSize: "0.8125rem", color: "var(--text-primary)", fontWeight: 700 }}>
                                                     AI Claim Report
                                                 </span>
                                             </div>
@@ -709,7 +709,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                     className="btn btn-ghost"
                                                     onClick={regenerateReport}
                                                     disabled={reportLoading}
-                                                    style={{ padding: "5px 10px", fontSize: "2rem", display: "flex", alignItems: "center", gap: 5 }}
+                                                    style={{ padding: "5px 10px", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: 5 }}
                                                 >
                                                     <RefreshCw size={13} style={reportLoading ? { animation: "spin 1s linear infinite" } : undefined} />
                                                     {reportLoading ? "Generating…" : "Regenerate"}
@@ -718,7 +718,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                         </div>
                                         {reportLoading && (
                                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "2rem" }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--text-muted)", fontSize: "0.8125rem" }}>
                                                     <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
                                                     Generating claim report…
                                                 </div>
@@ -729,7 +729,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                             <ClaimReportRenderer report={claimReport} />
                                         )}
                                         {!reportLoading && !claimReport && reportLoaded && (
-                                            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "2rem" }}>
+                                            <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
                                                 Report generation failed. Ask a question below.
                                             </div>
                                         )}
@@ -747,7 +747,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     {(claimReport || reportLoaded) && (
                                         <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
                                             {agentMessages.length === 0 && claimReport && (
-                                                <div style={{ fontSize: "2rem", color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>
+                                                <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center", padding: "8px 0" }}>
                                                     Ask a follow-up question about this report
                                                 </div>
                                             )}

@@ -8,6 +8,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
@@ -40,7 +41,25 @@ def do_run_migrations(connection) -> None:
         context.run_migrations()
 
 
+async def ensure_db_exists() -> None:
+    """Create the target database if it doesn't already exist (idempotent)."""
+    db_name = settings.DATABASE_URL.rstrip("/").rsplit("/", 1)[-1]
+    maintenance_url = settings.DATABASE_URL.rstrip("/").rsplit("/", 1)[0] + "/postgres"
+    engine = create_async_engine(maintenance_url, isolation_level="AUTOCOMMIT", echo=False)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": db_name},
+            )
+            if result.fetchone() is None:
+                await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+    finally:
+        await engine.dispose()
+
+
 async def run_async_migrations() -> None:
+    await ensure_db_exists()
     engine = create_async_engine(settings.DATABASE_URL)
     async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)

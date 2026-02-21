@@ -211,7 +211,7 @@ function SectionCard({ section }: { section: Section }) {
             }}>
                 <span style={{ color: meta.color, display: "flex", alignItems: "center" }}>{meta.icon}</span>
                 <span style={{
-                    fontSize: "1.5rem",
+                    fontSize: "0.6875rem",
                     fontWeight: 700,
                     letterSpacing: "0.07em",
                     textTransform: "uppercase",
@@ -240,12 +240,12 @@ function ParagraphBody({ section }: { section: Section }) {
     return (
         <>
             {section.paragraphs.map((p, i) => (
-                <p key={i} style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{p}</p>
+                <p key={i} style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{p}</p>
             ))}
             {section.bullets.map((b, i) => (
                 <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
                     <ChevronRight size={14} style={{ color: "var(--text-muted)", flexShrink: 0, marginTop: 3 }} />
-                    <span style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{b}</span>
+                    <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{b}</span>
                 </div>
             ))}
         </>
@@ -266,10 +266,10 @@ function ClaimDetailsBody({ section }: { section: Section }) {
                     borderRadius: 7,
                     padding: "9px 12px",
                 }}>
-                    <div style={{ fontSize: "1.5rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3, fontWeight: 600 }}>
+                    <div style={{ fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3, fontWeight: 600 }}>
                         {kv.key}
                     </div>
-                    <div style={{ fontSize: "1.5rem", color: "var(--text-primary)", fontWeight: 600, wordBreak: "break-all" }}>
+                    <div style={{ fontSize: "0.8125rem", color: "var(--text-primary)", fontWeight: 600, wordBreak: "break-all" }}>
                         {kv.value || "—"}
                     </div>
                 </div>
@@ -303,16 +303,16 @@ function DocumentAnalysisBody({ section }: { section: Section }) {
                             borderBottom: "1px solid rgba(52,211,153,0.15)",
                         }}>
                             <FileText size={13} color="#34d399" />
-                            <span style={{ fontSize: "1.5rem", fontWeight: 700, color: "#34d399" }}>{docType}</span>
+                            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#34d399" }}>{docType}</span>
                             {fileName && (
-                                <span style={{ fontSize: "1.5rem", color: "var(--text-muted)", fontStyle: "italic" }}>({fileName})</span>
+                                <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontStyle: "italic" }}>({fileName})</span>
                             )}
                         </div>
                         <div style={{ padding: "8px 12px" }}>
                             {doc.bullets.map((b, j) => (
                                 <div key={j} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 5 }}>
-                                    <span style={{ color: "#34d399", fontSize: "1.5rem", flexShrink: 0, marginTop: 3 }}>•</span>
-                                    <span style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{b}</span>
+                                    <span style={{ color: "#34d399", fontSize: "0.75rem", flexShrink: 0, marginTop: 3 }}>•</span>
+                                    <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{b}</span>
                                 </div>
                             ))}
                         </div>
@@ -327,7 +327,7 @@ function BulletBody({ section, color }: { section: Section; color: string }) {
     return (
         <div>
             {section.paragraphs.map((p, i) => (
-                <p key={i} style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{p}</p>
+                <p key={i} style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{p}</p>
             ))}
             {section.bullets.map((b, i) => (
                 <div key={i} style={{
@@ -341,7 +341,7 @@ function BulletBody({ section, color }: { section: Section; color: string }) {
                     padding: "8px 11px",
                 }}>
                     <AlertCircle size={14} style={{ color, flexShrink: 0, marginTop: 2 }} />
-                    <span style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{b}</span>
+                    <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{b}</span>
                 </div>
             ))}
         </div>
@@ -371,13 +371,13 @@ function ActionItemsBody({ section }: { section: Section }) {
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        fontSize: "1.5rem",
+                        fontSize: "0.6875rem",
                         fontWeight: 700,
                         flexShrink: 0,
                     }}>
                         {i + 1}
                     </div>
-                    <span style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{b}</span>
+                    <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{b}</span>
                 </div>
             ))}
         </div>
@@ -404,15 +404,15 @@ function RecommendationBody({ section }: { section: Section }) {
                 marginBottom: (section.paragraphs.length > 0 || reasoning) ? 14 : 0,
             }}>
                 <span style={{ color: style.color }}>{style.icon}</span>
-                <div style={{ fontSize: "1.5rem", fontWeight: 800, color: style.color, letterSpacing: "0.04em", lineHeight: 1 }}>
+                <div style={{ fontSize: "1rem", fontWeight: 800, color: style.color, letterSpacing: "0.04em", lineHeight: 1 }}>
                     {verdict}
                 </div>
             </div>
             {reasoning && (
-                <p style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{reasoning}</p>
+                <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{reasoning}</p>
             )}
             {section.paragraphs.map((p, i) => (
-                <p key={i} style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{p}</p>
+                <p key={i} style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.75, marginBottom: 8 }}>{p}</p>
             ))}
         </div>
     );
@@ -426,7 +426,7 @@ export function ClaimReportRenderer({ report }: { report: string }) {
     if (sections.length === 0) {
         // Fallback: just show raw text nicely
         return (
-            <div style={{ fontSize: "1.5rem", color: "var(--text-secondary)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.75, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                 {report}
             </div>
         );

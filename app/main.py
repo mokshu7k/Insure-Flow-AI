@@ -11,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
 from app.config import settings
 from app.core.exceptions import InsureFlowException
 from app.core.logging import setup_logging
@@ -20,13 +23,40 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
+async def ensure_db_exists() -> None:
+    """Create the application database if it does not already exist.
+
+    Connects to the *postgres* maintenance database (always present on any
+    PostgreSQL server) and issues CREATE DATABASE only when the target DB is
+    missing.  Uses AUTOCOMMIT so the DDL statement runs outside a transaction.
+    """
+    db_name = settings.DATABASE_URL.rstrip("/").rsplit("/", 1)[-1]
+    maintenance_url = settings.DATABASE_URL.rstrip("/").rsplit("/", 1)[0] + "/postgres"
+    engine = create_async_engine(maintenance_url, isolation_level="AUTOCOMMIT", echo=False)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": db_name},
+            )
+            if result.fetchone() is None:
+                logger.warning("Database '%s' not found — creating it now.", db_name)
+                await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+                logger.info("Database '%s' created successfully.", db_name)
+            else:
+                logger.info("Database '%s' already exists.", db_name)
+    except Exception as exc:  # pragma: no cover
+        logger.error("Could not ensure database exists: %s", exc)
+        raise
+    finally:
+        await engine.dispose()
+
 
 # ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     logger.info("Starting InsureFlow AI v2...")
-    # Add startup tasks here as stages are built:
-    # e.g. warm up ML model, verify DB connectivity
+    await ensure_db_exists()
     yield
     logger.info("InsureFlow AI shutting down.")
 
