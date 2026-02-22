@@ -1,0 +1,1 @@
+postgresql+asyncpg://insureflow-user:c1321e94f14f4f6fb8feada847eb5128@/insureflow?host=/cloudsql/techfiesta-487920:asia-south1:free-trial-first-project

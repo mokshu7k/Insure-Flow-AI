@@ -1,0 +1,52 @@
+# =============================================================================
+# InsureFlow AI — Local Development Compose
+# For production, use Cloud Run + Cloud SQL (see cloudbuild.yaml)
+# =============================================================================
+version: "3.9"
+
+services:
+  # ── PostgreSQL (local dev only — use Cloud SQL for production) ─────────────
+  db:
+    image: postgres:16-alpine
+    container_name: insureflow_db
+    environment:
+      POSTGRES_USER: insureflow
+      POSTGRES_PASSWORD: insureflow
+      POSTGRES_DB: insureflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U insureflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend ───────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: insureflow_backend
+    env_file: .env                        # copy .env.example → .env and fill in
+    environment:
+      # Override DATABASE_URL to point at the local db service
+      DATABASE_URL: postgresql+asyncpg://insureflow:insureflow@db:5432/insureflow
+      PORT: "8000"
+      LOG_LEVEL: "debug"
+      DEBUG: "true"
+      COOKIE_SECURE: "false"             # HTTP is fine for local dev
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source so you get live reload without rebuilding
+      - .:/app
+      - /app/__pycache__             # don't override container's caches
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

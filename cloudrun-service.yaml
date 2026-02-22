@@ -1,0 +1,98 @@
+# =============================================================================
+# InsureFlow AI — Cloud Run Service Definition (optional declarative approach)
+#
+# Deploy with:
+#   gcloud run services replace cloudrun-service.yaml --region=us-central1
+#
+# Useful for importing into Terraform or keeping config in git.
+# Replace:
+#   YOUR_PROJECT   → your GCP project ID
+#   YOUR_REGION    → e.g. us-central1
+#   YOUR_IMAGE     → full Artifact Registry image path
+# =============================================================================
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: insureflow-backend
+  namespace: techfiesta-487920
+  labels:
+    cloud.googleapis.com/location: asia-south1
+  annotations:
+    run.googleapis.com/launch-stage: BETA
+
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/cloudsql-instances: techfiesta-487920:asia-south1:free-trial-first-project
+
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      serviceAccountName: insureflow-backend-sa@techfiesta-487920.iam.gserviceaccount.com
+
+      containers:
+        - image: asia-south1-docker.pkg.dev/techfiesta-487920/insureflow/insureflow-backend:latest
+
+          ports:
+            - name: http1
+              containerPort: 8080
+
+          resources:
+            limits:
+              cpu: "2"
+              memory: 2Gi
+
+          env:
+            - name: LOG_LEVEL
+              value: "info"
+            - name: COOKIE_SECURE
+              value: "true"
+            - name: ALLOWED_ORIGINS
+              value: '["https://YOUR_FRONTEND_DOMAIN"]'
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: insureflow-secret-key
+                  key: latest
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: insureflow-encryption-key
+                  key: latest
+            - name: QR_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: insureflow-qr-secret-key
+                  key: latest
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: insureflow-database-url
+                  key: latest
+            - name: GCP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: insureflow-gcp-api-key
+                  key: latest
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+
+  traffic:
+    - percent: 100
+      latestRevision: true
