@@ -1,310 +1,625 @@
 "use client";
+
 import Link from "next/link";
+import { useState, useEffect, useRef } from "react";
 import {
-  Shield, Brain, FileSearch, BarChart3, Zap, CheckCircle,
-  ArrowRight, AlertTriangle, Users, Lock, FileText
+  Shield, Heart, HeartPulse, Home, Car, Briefcase, Building2,
+  Phone, Mail, MapPin, ChevronRight, Star, CheckCircle,
+  ArrowRight, Clock, Users, Award, Menu, X, Quote
 } from "lucide-react";
-import { Navbar } from "@/components/layout/PublicLayout";
+import "./landing.css";
 
-const FEATURES = [
+/* ── Data ────────────────────────────────────────────────── */
+
+const SERVICES = [
   {
-    icon: Brain,
-    title: "3-Layer Fraud Engine",
-    desc: "Deterministic rules → Statistical anomaly detection (z-score) → Gemini AI narrative. Six independent signals, one explainable score.",
-    accent: "var(--crimson)",
-    bg: "var(--crimson-bg)",
-    border: "var(--crimson-border)",
+    icon: Heart,
+    title: "Life Insurance",
+    desc: "Secure your family's future with comprehensive life coverage plans tailored to your needs.",
   },
   {
-    icon: FileSearch,
-    title: "Tesseract OCR Pipeline",
-    desc: "Automated document ingestion: preprocess → extract → parse. Supports invoices, prescriptions, discharge summaries, police reports.",
-    accent: "var(--blue)",
-    bg: "var(--blue-bg)",
-    border: "var(--blue-border)",
+    icon: HeartPulse,
+    title: "Health Insurance",
+    desc: "Complete medical coverage including hospitalization, surgeries, and preventive care benefits.",
   },
   {
-    icon: Shield,
-    title: "DPDP / HIPAA Compliance",
-    desc: "Consent enforcement, immutable audit trails, right-to-erasure, PII sanitization with configurable privacy modes.",
-    accent: "var(--green)",
-    bg: "var(--green-bg)",
-    border: "var(--green-border)",
+    icon: Home,
+    title: "Home Insurance",
+    desc: "Protect your home and belongings against natural disasters, theft, and unexpected damages.",
   },
   {
-    icon: Lock,
-    title: "Human-in-the-Loop",
-    desc: "Admin must manually approve or reject any claim. No automated settlement without explicit human decision. Full transparency.",
-    accent: "var(--amber)",
-    bg: "var(--amber-bg)",
-    border: "var(--amber-border)",
+    icon: Car,
+    title: "Vehicle Insurance",
+    desc: "Comprehensive auto coverage for accidents, theft, and third-party liability protection.",
   },
   {
-    icon: BarChart3,
-    title: "Analytics Command Center",
-    desc: "Real-time fraud distribution, SLA heatmaps, claim status breakdown, compliance health — all from live backend APIs.",
-    accent: "var(--blue)",
-    bg: "var(--blue-bg)",
-    border: "var(--blue-border)",
+    icon: Briefcase,
+    title: "Business Insurance",
+    desc: "Safeguard your enterprise with tailored commercial insurance and liability coverage.",
   },
   {
-    icon: Zap,
-    title: "Adjuster AI Agent",
-    desc: "Ask questions about any claim in plain English. Get structured fraud summaries, flag explanations, and recommendation reports.",
-    accent: "var(--amber)",
-    bg: "var(--amber-bg)",
-    border: "var(--amber-border)",
+    icon: Building2,
+    title: "Property Insurance",
+    desc: "Full protection for commercial and residential properties against all potential risks.",
   },
 ];
 
-const ROLES = [
+const REASONS = [
   {
-    role: "CUSTOMER",
-    label: "Policyholder",
+    icon: Shield,
+    title: "Comprehensive Coverage",
+    desc: "Wide range of insurance products covering every aspect of your life and business.",
+  },
+  {
+    icon: Clock,
+    title: "Fast Claims Processing",
+    desc: "AI-powered claims processing ensures quick turnaround with transparent status tracking.",
+  },
+  {
     icon: Users,
-    color: "var(--blue)",
-    border: "var(--blue-border)",
-    bg: "var(--blue-bg)",
-    capabilities: [
-      "Submit claims with documents",
-      "Track claim status in real-time",
-      "Upload OCR-processed invoices",
-      "Consent management (DPDP)",
-    ],
-    cta: "/register",
-    ctaLabel: "Register as Customer",
+    title: "Dedicated Support Team",
+    desc: "24/7 expert support team ready to assist you with any queries or claims assistance.",
   },
   {
-    role: "PROVIDER",
-    label: "Healthcare Provider",
-    icon: FileText,
-    color: "var(--green)",
-    border: "var(--green-border)",
-    bg: "var(--green-bg)",
-    capabilities: [
-      "View claims related to your facility",
-      "Upload supporting medical documents",
-      "Track settlement status",
-      "Access discharge summaries",
-    ],
-    cta: "/register",
-    ctaLabel: "Register as Provider",
-  },
-  {
-    role: "INSURER_ADMIN",
-    label: "Insurer Admin",
-    icon: Brain,
-    color: "var(--crimson)",
-    border: "var(--crimson-border)",
-    bg: "var(--crimson-bg)",
-    capabilities: [
-      "Trigger 3-layer fraud analysis",
-      "Approve, reject, or flag claims",
-      "Full operations dashboard",
-      "Adjuster AI agent access",
-    ],
-    cta: "/login",
-    ctaLabel: "Admin Sign In",
-  },
-  {
-    role: "AUDITOR",
-    label: "Compliance Auditor",
-    icon: Shield,
-    color: "var(--amber)",
-    border: "var(--amber-border)",
-    bg: "var(--amber-bg)",
-    capabilities: [
-      "Full immutable audit trail",
-      "Compliance metrics & reports",
-      "Consent history per user",
-      "Fraud assessment history",
-    ],
-    cta: "/login",
-    ctaLabel: "Auditor Sign In",
+    icon: Award,
+    title: "Award Winning Service",
+    desc: "Recognized industry leader with multiple awards for customer satisfaction and innovation.",
   },
 ];
 
-const TRUST_ITEMS = [
-  "Human-in-the-loop enforcement — no auto-settlement",
-  "Immutable audit trail on every action",
-  "Fernet-encrypted documents at rest",
-  "Role-based access control (4 roles)",
-  "DPDP right-to-erasure implementation",
-  "Explainable AI — every score has a reason",
-  "PII sanitization before AI processing",
-  "Config-versioned fraud assessments",
+const TEAM_MEMBERS = [
+  {
+    name: "Rajesh Sharma",
+    role: "Chief Executive Officer",
+    image: "https://images.unsplash.com/photo-1560250097-0b93528c311a?w=400&h=400&fit=crop&crop=face&q=80",
+  },
+  {
+    name: "Priya Patel",
+    role: "Head of Claims",
+    image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&h=400&fit=crop&crop=face&q=80",
+  },
+  {
+    name: "Amit Verma",
+    role: "Lead AI Engineer",
+    image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=face&q=80",
+  },
+  {
+    name: "Sneha Reddy",
+    role: "Compliance Director",
+    image: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=400&h=400&fit=crop&crop=face&q=80",
+  },
 ];
 
-const STATS = [
-  { value: "3-Layer", label: "Fraud detection layers", color: "var(--crimson)" },
-  { value: "L1+L2+L3", label: "Rules + Stats + AI", color: "var(--amber)" },
-  { value: "DPDP", label: "Compliant by design", color: "var(--green)" },
-  { value: "4", label: "Role-gated portals", color: "var(--blue)" },
+const TESTIMONIALS = [
+  {
+    name: "Vikram Malhotra",
+    position: "Business Owner",
+    text: "InsureFlow transformed our claims process. What used to take weeks now gets resolved in days. The AI fraud detection gives us complete confidence.",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face&q=80",
+  },
+  {
+    name: "Ananya Singh",
+    position: "HR Manager",
+    text: "The health insurance claims for our employees are processed seamlessly. The transparency and real-time tracking features are exceptional.",
+    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=face&q=80",
+  },
+  {
+    name: "Rahul Kapoor",
+    position: "Family Policyholder",
+    text: "After my car accident, the claim was filed and processed within 48 hours. The OCR document scanning made uploading paperwork effortless.",
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop&crop=face&q=80",
+  },
 ];
+
+const LP_STATS = [
+  { value: 5000, suffix: "+", label: "Happy Clients" },
+  { value: 12000, suffix: "+", label: "Claims Processed" },
+  { value: 98, suffix: "%", label: "Satisfaction Rate" },
+  { value: 50, suffix: "+", label: "Team Members" },
+];
+
+/* ── Animated Counter Hook ───────────────────────────────── */
+
+function useCountUp(target: number, duration = 2000, shouldStart = false) {
+  const [count, setCount] = useState(0);
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (!shouldStart || started.current) return;
+    started.current = true;
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.floor(eased * target));
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [shouldStart, target, duration]);
+
+  return count;
+}
+
+/* ── Counter Card Component ──────────────────────────────── */
+
+function StatCard({ stat, inView }: { stat: typeof LP_STATS[0]; inView: boolean }) {
+  const count = useCountUp(stat.value, 2000, inView);
+  return (
+    <div className="lp-stat-card">
+      <div className="lp-stat-value">
+        {count.toLocaleString()}{stat.suffix}
+      </div>
+      <div className="lp-stat-label">{stat.label}</div>
+    </div>
+  );
+}
+
+/* ── Main Page Component ─────────────────────────────────── */
 
 export default function HomePage() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [statsInView, setStatsInView] = useState(false);
+  const statsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setStatsInView(true); },
+      { threshold: 0.3 }
+    );
+    if (statsRef.current) observer.observe(statsRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg-base)", fontFamily: "var(--font-sans)" }}>
-      <Navbar />
+    <div className="landing-page">
 
-      {/* Hero */}
-      <section style={{ maxWidth: 860, margin: "0 auto", padding: "80px 32px 60px", textAlign: "center" }}>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          border: "1px solid var(--crimson-border)", background: "var(--crimson-bg)",
-          borderRadius: 20, padding: "4px 14px", marginBottom: 24,
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--crimson)", display: "inline-block" }} />
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--crimson)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            AI-powered · human-gated
-          </span>
-        </div>
-        <h1 style={{ fontSize: "clamp(2rem, 5vw, 3.25rem)", fontWeight: 800, lineHeight: 1.1, marginBottom: 20, letterSpacing: "-0.02em" }}>
-          Insurance Claims<br />
-          <span style={{ color: "var(--blue)" }}>Intelligence Platform</span>
-        </h1>
-        <p style={{ fontSize: "1rem", color: "var(--text-secondary)", lineHeight: 1.75, maxWidth: 560, margin: "0 auto 36px" }}>
-          End-to-end claims processing with explainable AI fraud detection,
-          OCR document processing, and compliance built for DPDP &amp; HIPAA.
-        </p>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <Link href="/register" style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "10px 24px", background: "var(--blue)", color: "#fff",
-            textDecoration: "none", borderRadius: 6, fontWeight: 600, fontSize: "0.875rem",
-          }}>
-            Start free trial <ArrowRight size={15} />
-          </Link>
-          <Link href="/login" style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "10px 24px", border: "1px solid var(--border)", color: "var(--text-primary)",
-            textDecoration: "none", borderRadius: 6, fontSize: "0.875rem",
-          }}>
-            Sign in to dashboard
-          </Link>
-        </div>
-
-        {/* Stats row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginTop: 56 }}>
-          {STATS.map((s) => (
-            <div key={s.label} style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 6, padding: "16px 12px", textAlign: "center" }}>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "1.25rem", fontWeight: 700, color: s.color, marginBottom: 4 }}>{s.value}</div>
-              <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Features grid */}
-      <section style={{ maxWidth: 1100, margin: "0 auto", padding: "20px 32px 64px" }}>
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Platform capabilities</div>
-          <h2 style={{ fontSize: "1.625rem", fontWeight: 700 }}>Everything the modern insurer needs</h2>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
-          {FEATURES.map((f) => (
-            <div key={f.title} style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: 8, padding: "20px 22px" }}>
-              <div style={{
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                width: 36, height: 36, borderRadius: 6,
-                background: f.bg, border: `1px solid ${f.border}`,
-                marginBottom: 14,
-              }}>
-                <f.icon size={17} color={f.accent} />
-              </div>
-              <div style={{ fontWeight: 600, fontSize: "0.9375rem", marginBottom: 8 }}>{f.title}</div>
-              <div style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{f.desc}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Role Portals */}
-      <section style={{ borderTop: "1px solid var(--border)", padding: "64px 32px" }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 40 }}>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Role-gated access</div>
-            <h2 style={{ fontSize: "1.625rem", fontWeight: 700 }}>Four portals, one platform</h2>
-            <p style={{ color: "var(--text-muted)", marginTop: 8, fontSize: "0.875rem" }}>Different capabilities based on who you are</p>
+      {/* ── Top Bar ──────────────────────────────────────── */}
+      <div className="lp-topbar">
+        <div className="lp-topbar-inner">
+          <div style={{ display: "flex", gap: 24 }}>
+            <a href="mailto:contact@insureflow.in">
+              <Mail size={14} /> contact@insureflow.in
+            </a>
+            <a href="tel:+911234567890">
+              <Phone size={14} /> +91 123 456 7890
+            </a>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-            {ROLES.map((r) => (
-              <div key={r.role} style={{ background: "var(--bg-panel)", border: `1px solid var(--border)`, borderRadius: 8, padding: "22px 20px", display: "flex", flexDirection: "column" }}>
-                <div style={{
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  width: 36, height: 36, borderRadius: 6,
-                  background: r.bg, border: `1px solid ${r.border}`,
-                  marginBottom: 14,
-                }}>
-                  <r.icon size={17} color={r.color} />
+          <div style={{ display: "flex", gap: 16, fontSize: "0.75rem" }}>
+            <Link href="/login" style={{ color: "rgba(255,255,255,0.7)", textDecoration: "none" }}>Sign In</Link>
+            <span style={{ color: "rgba(255,255,255,0.3)" }}>|</span>
+            <Link href="/register" style={{ color: "rgba(255,255,255,0.7)", textDecoration: "none" }}>Register</Link>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Navbar ───────────────────────────────────────── */}
+      <nav className="lp-navbar">
+        <div className="lp-navbar-inner">
+          <Link href="/" className="lp-logo">
+            <div className="lp-logo-icon">
+              <Shield size={22} />
+            </div>
+            InsureFlow
+          </Link>
+
+          <ul className="lp-nav-links">
+            <li><a href="#home" className="active">Home</a></li>
+            <li><a href="#services">Services</a></li>
+            <li><a href="#about">About</a></li>
+            <li><a href="#team">Team</a></li>
+            <li><a href="#testimonials">Reviews</a></li>
+            <li><a href="#contact">Contact</a></li>
+          </ul>
+
+          <div className="lp-nav-actions">
+            <Link href="/login" className="lp-btn lp-btn-outline lp-btn-sm">Sign In</Link>
+            <Link href="/register" className="lp-btn lp-btn-primary lp-btn-sm">Get Started</Link>
+          </div>
+
+          <button
+            className="lp-mobile-toggle"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle menu"
+          >
+            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <div style={{
+            background: "white",
+            borderTop: "1px solid #e2e8f0",
+            padding: "16px 24px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}>
+            <a href="#home" onClick={() => setMobileMenuOpen(false)} style={{ color: "#1e293b", textDecoration: "none", fontWeight: 500, padding: "8px 0" }}>Home</a>
+            <a href="#services" onClick={() => setMobileMenuOpen(false)} style={{ color: "#1e293b", textDecoration: "none", fontWeight: 500, padding: "8px 0" }}>Services</a>
+            <a href="#about" onClick={() => setMobileMenuOpen(false)} style={{ color: "#1e293b", textDecoration: "none", fontWeight: 500, padding: "8px 0" }}>About</a>
+            <a href="#team" onClick={() => setMobileMenuOpen(false)} style={{ color: "#1e293b", textDecoration: "none", fontWeight: 500, padding: "8px 0" }}>Team</a>
+            <a href="#testimonials" onClick={() => setMobileMenuOpen(false)} style={{ color: "#1e293b", textDecoration: "none", fontWeight: 500, padding: "8px 0" }}>Reviews</a>
+            <a href="#contact" onClick={() => setMobileMenuOpen(false)} style={{ color: "#1e293b", textDecoration: "none", fontWeight: 500, padding: "8px 0" }}>Contact</a>
+            <div style={{ display: "flex", gap: 8, paddingTop: 8 }}>
+              <Link href="/login" className="lp-btn lp-btn-outline lp-btn-sm" style={{ flex: 1, justifyContent: "center" }}>Sign In</Link>
+              <Link href="/register" className="lp-btn lp-btn-primary lp-btn-sm" style={{ flex: 1, justifyContent: "center" }}>Get Started</Link>
+            </div>
+          </div>
+        )}
+      </nav>
+
+      {/* ── Hero Section ─────────────────────────────────── */}
+      <section id="home" className="lp-hero">
+        <div className="lp-hero-bg">
+          <img
+            src="https://images.unsplash.com/photo-1581579438747-1dc8d17bbce4?w=1920&q=80"
+            alt="Happy family protected by insurance"
+            loading="eager"
+          />
+        </div>
+        <div className="lp-hero-overlay" />
+        <div className="lp-hero-content">
+          <div className="lp-hero-tag lp-animate">
+            <span className="lp-hero-tag-dot" />
+            Trusted by 5,000+ Policyholders
+          </div>
+          <h1 className="lp-animate lp-animate-delay-1">
+            Insurance Creates<br />
+            Wealth <span>For Everyone</span>
+          </h1>
+          <p className="lp-hero-desc lp-animate lp-animate-delay-2">
+            Comprehensive insurance solutions powered by intelligent claims processing.
+            Protect what matters most with fast, transparent, and AI-assisted coverage
+            that puts you in control.
+          </p>
+          <div className="lp-hero-btns lp-animate lp-animate-delay-3">
+            <Link href="/register" className="lp-btn lp-btn-primary">
+              Get Started <ArrowRight size={18} />
+            </Link>
+            <Link href="#services" className="lp-btn lp-btn-white">
+              Explore Services
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Services Section ─────────────────────────────── */}
+      <section id="services" className="lp-section">
+        <div className="lp-container">
+          <div className="lp-section-header">
+            <div className="lp-section-tag">Our Services</div>
+            <h2 className="lp-section-title">We Provide Professional Insurance Services</h2>
+            <p className="lp-section-desc">
+              From life and health to property and business — our comprehensive insurance
+              plans are designed to give you complete peace of mind.
+            </p>
+          </div>
+          <div className="lp-services-grid">
+            {SERVICES.map((s, i) => (
+              <div key={s.title} className={`lp-service-card lp-animate lp-animate-delay-${i + 1}`}>
+                <div className="lp-service-icon">
+                  <s.icon size={28} />
                 </div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: r.color, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>{r.role}</div>
-                <div style={{ fontWeight: 600, fontSize: "0.9375rem", marginBottom: 14 }}>{r.label}</div>
-                <ul style={{ flex: 1, listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {r.capabilities.map((c) => (
-                    <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: "0.8125rem", color: "var(--text-secondary)" }}>
-                      <CheckCircle size={13} color="var(--green)" style={{ marginTop: 2, flexShrink: 0 }} />
-                      {c}
-                    </li>
-                  ))}
-                </ul>
-                <Link href={r.cta} style={{
-                  display: "block", marginTop: 20, textAlign: "center",
-                  padding: "8px 16px", fontSize: "0.8125rem", fontWeight: 500,
-                  background: r.bg, border: `1px solid ${r.border}`, color: r.color,
-                  textDecoration: "none", borderRadius: 4,
-                }}>
-                  {r.ctaLabel}
+                <div className="lp-service-title">{s.title}</div>
+                <div className="lp-service-desc">{s.desc}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── About / Experience Section ────────────────────── */}
+      <section id="about" className="lp-section lp-section-alt">
+        <div className="lp-container">
+          <div className="lp-about-grid">
+            <div>
+              <div className="lp-experience-badge">
+                <span className="number">25</span>
+                <span className="label">Years Exp.</span>
+              </div>
+              <h2 className="lp-about-title">
+                We&apos;re Here To Assist You With Exploring Protection
+              </h2>
+              <p className="lp-about-desc">
+                With over two decades of experience in the insurance industry, we combine
+                deep domain expertise with cutting-edge AI technology to deliver claims
+                processing that is faster, more accurate, and completely transparent.
+                Our platform ensures every claim is handled with care and precision.
+              </p>
+              <div className="lp-features-list">
+                <div className="lp-feature-item">
+                  <div className="lp-feature-check">
+                    <CheckCircle size={14} />
+                  </div>
+                  Flexible Insurance Plans
+                </div>
+                <div className="lp-feature-item">
+                  <div className="lp-feature-check">
+                    <CheckCircle size={14} />
+                  </div>
+                  Money Back Guarantee
+                </div>
+              </div>
+              <div className="lp-features-list">
+                <div className="lp-feature-item">
+                  <div className="lp-feature-check">
+                    <CheckCircle size={14} />
+                  </div>
+                  AI-Powered Processing
+                </div>
+                <div className="lp-feature-item">
+                  <div className="lp-feature-check">
+                    <CheckCircle size={14} />
+                  </div>
+                  24/7 Claim Support
+                </div>
+              </div>
+              <a href="tel:+911234567890" className="lp-phone-cta">
+                <div className="lp-phone-icon">
+                  <Phone size={18} />
+                </div>
+                Call Us: +91 123 456 7890
+              </a>
+            </div>
+            <div className="lp-about-image">
+              <img
+                src="https://images.unsplash.com/photo-1600880292203-757bb62b4baf?w=800&q=80"
+                alt="Professional insurance consultation"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Why Choose Us ────────────────────────────────── */}
+      <section className="lp-section">
+        <div className="lp-container">
+          <div className="lp-reasons-grid">
+            <div className="lp-reasons-image">
+              <img
+                src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=800&q=80"
+                alt="Insurance professional"
+                loading="lazy"
+              />
+            </div>
+            <div>
+              <div className="lp-section-tag" style={{ justifyContent: "flex-start" }}>Why Choose Us</div>
+              <h2 className="lp-section-title" style={{ textAlign: "left" }}>
+                Few Reasons Why People Choose Us
+              </h2>
+              <p style={{ color: "#64748b", marginBottom: 32, lineHeight: 1.7 }}>
+                We are committed to providing the best insurance experience with modern technology,
+                expert guidance, and unwavering support for all our policyholders.
+              </p>
+              {REASONS.map((r) => (
+                <div key={r.title} className="lp-reason-item">
+                  <div className="lp-reason-icon">
+                    <r.icon size={22} />
+                  </div>
+                  <div>
+                    <div className="lp-reason-title">{r.title}</div>
+                    <div className="lp-reason-desc">{r.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Stats Counter ────────────────────────────────── */}
+      <section className="lp-stats" ref={statsRef}>
+        <div className="lp-stats-inner">
+          <div className="lp-stats-header">
+            <h2>For Individuals And Organizations</h2>
+            <p>
+              Trusted by thousands of policyholders and businesses across India
+              for reliable insurance coverage and fast claims resolution.
+            </p>
+          </div>
+          <div className="lp-stats-grid">
+            {LP_STATS.map((stat) => (
+              <StatCard key={stat.label} stat={stat} inView={statsInView} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Award Section ────────────────────────────────── */}
+      <section className="lp-section lp-section-alt">
+        <div className="lp-container">
+          <div className="lp-award-grid">
+            <div>
+              <div className="lp-award-tag">
+                <Award size={14} /> Award Winning
+              </div>
+              <h2 className="lp-award-title">
+                We&apos;re An Award Winning Insurance Company
+              </h2>
+              <p className="lp-award-desc">
+                Recognized for excellence in customer service, innovation in claims processing,
+                and commitment to policyholder satisfaction. Our AI-powered platform has been
+                acknowledged by leading industry bodies for transforming the insurance landscape.
+              </p>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                <Link href="/register" className="lp-btn lp-btn-primary">
+                  Get Started <ArrowRight size={16} />
                 </Link>
+                <a href="tel:+911234567890" className="lp-btn lp-btn-outline">
+                  <Phone size={16} /> +91 123 456 7890
+                </a>
+              </div>
+            </div>
+            <div className="lp-award-image">
+              <img
+                src="https://images.unsplash.com/photo-1521737711867-e3b97375f902?w=800&q=80"
+                alt="Award winning insurance team"
+                loading="lazy"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Team Section ─────────────────────────────────── */}
+      <section id="team" className="lp-section">
+        <div className="lp-container">
+          <div className="lp-section-header">
+            <div className="lp-section-tag">Our Team</div>
+            <h2 className="lp-section-title">Meet Our Professional Team Members</h2>
+            <p className="lp-section-desc">
+              Our dedicated team of insurance and technology experts works tirelessly to
+              deliver the best experience for every policyholder.
+            </p>
+          </div>
+          <div className="lp-team-grid">
+            {TEAM_MEMBERS.map((m) => (
+              <div key={m.name} className="lp-team-card">
+                <img
+                  src={m.image}
+                  alt={m.name}
+                  className="lp-team-img"
+                  loading="lazy"
+                />
+                <div className="lp-team-info">
+                  <div className="lp-team-name">{m.name}</div>
+                  <div className="lp-team-role">{m.role}</div>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Trust checklist */}
-      <section style={{ borderTop: "1px solid var(--border)", padding: "60px 32px" }}>
-        <div style={{ maxWidth: 860, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 36 }}>
-            <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>Built for regulated environments</h2>
-            <p style={{ color: "var(--text-muted)", marginTop: 8, fontSize: "0.875rem" }}>Compliance, privacy, and auditability are first-class concerns — not afterthoughts.</p>
+      {/* ── Testimonials ─────────────────────────────────── */}
+      <section id="testimonials" className="lp-section lp-section-alt">
+        <div className="lp-container">
+          <div className="lp-section-header">
+            <div className="lp-section-tag">Testimonials</div>
+            <h2 className="lp-section-title">What They Say About Our Insurance</h2>
+            <p className="lp-section-desc">
+              Hear from our satisfied policyholders about their experience with InsureFlow.
+            </p>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "10px 32px" }}>
-            {TRUST_ITEMS.map((item) => (
-              <div key={item} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-                <CheckCircle size={14} color="var(--green)" style={{ flexShrink: 0 }} />
-                {item}
+          <div className="lp-testimonials-grid">
+            {TESTIMONIALS.map((t) => (
+              <div key={t.name} className="lp-testimonial-card">
+                <Quote size={32} className="lp-quote-icon" />
+                <div className="lp-testimonial-stars">
+                  {[...Array(5)].map((_, i) => (
+                    <Star key={i} size={16} fill="#f59e0b" stroke="#f59e0b" />
+                  ))}
+                </div>
+                <div className="lp-testimonial-text">&ldquo;{t.text}&rdquo;</div>
+                <div className="lp-testimonial-author">
+                  <img
+                    src={t.avatar}
+                    alt={t.name}
+                    className="lp-testimonial-avatar"
+                    loading="lazy"
+                  />
+                  <div>
+                    <div className="lp-testimonial-name">{t.name}</div>
+                    <div className="lp-testimonial-position">{t.position}</div>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* CTA Banner */}
-      <section style={{ borderTop: "1px solid var(--border)", padding: "56px 32px", textAlign: "center" }}>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: 12 }}>Ready to process smarter claims?</h2>
-        <p style={{ color: "var(--text-muted)", marginBottom: 28, fontSize: "0.875rem" }}>Register for your portal or sign in if you already have an account.</p>
-        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-          <Link href="/register" style={{ padding: "10px 24px", background: "var(--blue)", color: "#fff", textDecoration: "none", borderRadius: 6, fontWeight: 600, fontSize: "0.875rem" }}>
-            Create account
-          </Link>
-          <Link href="/login" style={{ padding: "10px 24px", border: "1px solid var(--border)", color: "var(--text-primary)", textDecoration: "none", borderRadius: 6, fontSize: "0.875rem" }}>
-            Sign in
-          </Link>
+      {/* ── CTA Banner ───────────────────────────────────── */}
+      <section className="lp-cta-banner">
+        <div className="lp-container">
+          <h2>Ready to Secure Your Future?</h2>
+          <p>
+            Join thousands of satisfied policyholders. Register today and experience
+            insurance the modern way.
+          </p>
+          <div className="lp-cta-banner-btns">
+            <Link href="/register" className="lp-btn lp-btn-white">
+              Create Free Account <ArrowRight size={16} />
+            </Link>
+            <Link href="/login" className="lp-btn lp-btn-outline" style={{ color: "white", borderColor: "rgba(255,255,255,0.4)" }}>
+              Sign In to Dashboard
+            </Link>
+          </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer style={{ borderTop: "1px solid var(--border)", padding: "24px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <AlertTriangle size={14} color="var(--amber)" />
-          <span style={{ fontWeight: 600, fontSize: "0.8125rem" }}>InsureFlow</span>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.625rem", color: "var(--text-muted)" }}>Claim Intelligence Platform</span>
+      {/* ── Footer ───────────────────────────────────────── */}
+      <footer id="contact" className="lp-footer">
+        <div className="lp-footer-grid">
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 8,
+                background: "#1a56db", display: "flex",
+                alignItems: "center", justifyContent: "center", color: "white",
+              }}>
+                <Shield size={22} />
+              </div>
+              <span style={{ fontWeight: 800, fontSize: "1.375rem", color: "white" }}>InsureFlow</span>
+            </div>
+            <p className="lp-footer-about">
+              InsureFlow is a modern insurance claims intelligence platform combining
+              AI-powered fraud detection, OCR document processing, and full regulatory
+              compliance. Built for the future of insurance.
+            </p>
+          </div>
+
+          <div>
+            <div className="lp-footer-heading">Quick Links</div>
+            <ul className="lp-footer-links">
+              <li><a href="#home"><ChevronRight size={12} /> Home</a></li>
+              <li><a href="#services"><ChevronRight size={12} /> Services</a></li>
+              <li><a href="#about"><ChevronRight size={12} /> About Us</a></li>
+              <li><a href="#team"><ChevronRight size={12} /> Our Team</a></li>
+              <li><a href="#testimonials"><ChevronRight size={12} /> Testimonials</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <div className="lp-footer-heading">Services</div>
+            <ul className="lp-footer-links">
+              <li><a href="#services"><ChevronRight size={12} /> Life Insurance</a></li>
+              <li><a href="#services"><ChevronRight size={12} /> Health Insurance</a></li>
+              <li><a href="#services"><ChevronRight size={12} /> Home Insurance</a></li>
+              <li><a href="#services"><ChevronRight size={12} /> Vehicle Insurance</a></li>
+              <li><a href="#services"><ChevronRight size={12} /> Business Insurance</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <div className="lp-footer-heading">Contact Us</div>
+            <div className="lp-footer-contact-item">
+              <div className="lp-footer-contact-icon"><MapPin size={16} /></div>
+              <div>123 Insurance Plaza,<br />Mumbai, Maharashtra 400001</div>
+            </div>
+            <div className="lp-footer-contact-item">
+              <div className="lp-footer-contact-icon"><Phone size={16} /></div>
+              <div>+91 123 456 7890</div>
+            </div>
+            <div className="lp-footer-contact-item">
+              <div className="lp-footer-contact-icon"><Mail size={16} /></div>
+              <div>contact@insureflow.in</div>
+            </div>
+          </div>
         </div>
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--text-muted)" }}>
-          © 2026 · DPDP &amp; HIPAA compliant · Made for Techfiesta 2026
-        </span>
+
+        <div className="lp-footer-bottom">
+          <span>&copy; 2026 InsureFlow. All rights reserved.</span>
+          <div className="lp-footer-bottom-links">
+            <Link href="/privacy">Privacy Policy</Link>
+            <Link href="/terms">Terms of Service</Link>
+          </div>
+        </div>
       </footer>
+
     </div>
   );
 }

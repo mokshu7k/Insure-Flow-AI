@@ -2,7 +2,7 @@
 import { useEffect, useState, use, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { CommandLayout } from "@/components/layout/CommandLayout";
-import { AuditTrailPanel } from "@/components/layout/AuditTrailPanel";
+// AuditTrailPanel moved to modal — see AuditLogBook below
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { FraudScoreBadge, StatusPill, MonoValue } from "@/components/ui";
 import { EditableExtractedData } from "@/components/ui/EditableExtractedData";
@@ -17,7 +17,8 @@ import { canTransitionTo } from "@/types";
 import {
     ArrowLeft, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
     ChevronDown, ChevronUp, Send, Loader2, RefreshCw, Flag, Clock,
-    CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X
+    CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X,
+    BookOpen, Search, Filter, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { ClaimReportRenderer } from "@/components/ui/ClaimReportRenderer";
 import { FraudAgentPanel } from "@/components/ui/FraudAgentPanel";
@@ -113,11 +114,11 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [agentSending, setAgentSending] = useState(false);
     const agentBottomRef = useRef<HTMLDivElement>(null);
     // Drag-resizable panels
-    const [rightPanelWidth, setRightPanelWidth] = useState(460);
+    const [rightPanelWidth, setRightPanelWidth] = useState(520);
     const [reportPanelHeight, setReportPanelHeight] = useState(440);
     const horizDragging = useRef(false);
     const vertDragging = useRef(false);
-    const horizStart = useRef({ x: 0, w: 460 });
+    const horizStart = useRef({ x: 0, w: 520 });
     const vertStart = useRef({ y: 0, h: 440 });
     useEffect(() => {
         const onMove = (e: MouseEvent) => {
@@ -141,6 +142,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     // Reject modal
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectReason, setRejectReason] = useState("");
+    // Audit log book modal
+    const [showAuditBook, setShowAuditBook] = useState(false);
     // Timeline
     const [timelineEntries, setTimelineEntries] = useState<AuditLogEntry[]>([]);
     const [timelineLoading, setTimelineLoading] = useState(false);
@@ -313,7 +316,6 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     return (
         <AuthGuard>
             <CommandLayout
-                rightPanel={<AuditTrailPanel claimId={id} />}
                 header={
                     <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
                         <button onClick={() => router.push("/claims")} className="btn btn-ghost" style={{ padding: "4px 8px" }}>
@@ -323,8 +325,28 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                             {claim?.id.slice(0, 8)}…
                         </span>
                         {claim && <StatusPill status={claim.status} />}
+                        {/* Spacer + action buttons */}
+                        <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+                            {/* Audit Log Book button — always visible */}
+                            <button
+                                onClick={() => setShowAuditBook(true)}
+                                style={{
+                                    display: "flex", alignItems: "center", gap: 5,
+                                    padding: "5px 12px", height: 30,
+                                    background: "#fff", border: "1px solid #e2e8f0",
+                                    borderRadius: 8, fontSize: "0.75rem", fontWeight: 600,
+                                    color: "#64748b", cursor: "pointer",
+                                    transition: "all 0.15s",
+                                    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#1a56db"; e.currentTarget.style.color = "#1a56db"; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.color = "#64748b"; }}
+                            >
+                                <BookOpen size={13} />
+                                Audit Logs
+                            </button>
                         {canAction && claim && (
-                            <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                            <>
                                 {canTransitionTo(claim.status, "APPROVED") && (
                                     <button className="btn btn-ghost" onClick={() => changeStatus("APPROVED")} disabled={actionLoading} style={{ color: "var(--green)", borderColor: "var(--green-border)" }}>
                                         <CheckCircle size={13} /> Approve
@@ -351,8 +373,9 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                         <CircleCheck size={13} /> Settle
                                     </button>
                                 )}
-                            </div>
+                            </>
                         )}
+                        </div>
                     </div>
                 }
             >
@@ -549,31 +572,32 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                         {canAction && (<div style={{ width: rightPanelWidth, flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                             {/* Tab bar */}
                             {canAction && (
-                                <div style={{ display: "flex", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+                                <div style={{ display: "flex", borderBottom: "1px solid #e8ecf1", flexShrink: 0, background: "#fafbfc" }}>
                                     {(["fraud", "agent"] as const).map((tab) => (
                                         <button
                                             key={tab}
                                             onClick={() => setRightTab(tab)}
                                             style={{
                                                 flex: 1,
-                                                padding: "9px 0",
-                                                fontSize: "0.6875rem",
-                                                fontWeight: 600,
+                                                padding: "12px 0",
+                                                fontSize: "0.75rem",
+                                                fontWeight: 700,
                                                 textTransform: "uppercase",
                                                 letterSpacing: "0.06em",
-                                                background: "none",
+                                                background: rightTab === tab ? "#fff" : "transparent",
                                                 border: "none",
-                                                borderBottom: rightTab === tab ? "2px solid var(--blue)" : "2px solid transparent",
-                                                color: rightTab === tab ? "var(--blue)" : "var(--text-muted)",
+                                                borderBottom: rightTab === tab ? "2.5px solid #1a56db" : "2.5px solid transparent",
+                                                color: rightTab === tab ? "#1a56db" : "#94a3b8",
                                                 cursor: "pointer",
+                                                transition: "all 0.15s",
                                             }}
                                         >
-                                            {tab === "fraud" ? "Fraud" : "Claim Report"}
+                                            {tab === "fraud" ? "🛡️ Fraud Analysis" : "📋 Claim Report"}
                                         </button>
                                     ))}
                                 </div>
                             )}
-                        <div style={{ flex: 1, overflowY: "auto", padding: 20, display: rightTab === "fraud" || !canAction ? "block" : "none" }}>
+                        <div style={{ flex: 1, overflowY: "auto", padding: 0, display: rightTab === "fraud" || !canAction ? "block" : "none" }}>
                             <FraudAgentPanel
                                 claimId={id}
                                 assessment={assessment}
@@ -718,14 +742,15 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
             {showRejectModal && (
                 <div style={{
                     position: "fixed", inset: 0, zIndex: 50,
-                    background: "rgba(0,0,0,0.55)", display: "flex",
+                    background: "rgba(15,23,42,0.3)", display: "flex",
                     alignItems: "center", justifyContent: "center", padding: 24,
+                    backdropFilter: "blur(4px)",
                 }} onClick={(e) => { if (e.target === e.currentTarget) setShowRejectModal(false); }}>
                     <div style={{
                         background: "var(--bg-panel)", border: "1px solid var(--border)",
-                        borderRadius: 10, width: "100%", maxWidth: 520,
+                        borderRadius: 12, width: "100%", maxWidth: 520,
                         display: "flex", flexDirection: "column", overflow: "hidden",
-                        boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
+                        boxShadow: "0 24px 60px rgba(0,0,0,0.15)",
                     }}>
                         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
                             <XCircle size={15} color="var(--crimson)" />
@@ -785,14 +810,15 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
             {showFlagModal && (
                 <div style={{
                     position: "fixed", inset: 0, zIndex: 50,
-                    background: "rgba(0,0,0,0.55)", display: "flex",
+                    background: "rgba(15,23,42,0.3)", display: "flex",
                     alignItems: "center", justifyContent: "center", padding: 24,
+                    backdropFilter: "blur(4px)",
                 }} onClick={(e) => { if (e.target === e.currentTarget) setShowFlagModal(false); }}>
                     <div style={{
                         background: "var(--bg-panel)", border: "1px solid var(--border)",
-                        borderRadius: 10, width: "100%", maxWidth: 520,
+                        borderRadius: 12, width: "100%", maxWidth: 520,
                         display: "flex", flexDirection: "column", overflow: "hidden",
-                        boxShadow: "0 24px 60px rgba(0,0,0,0.4)",
+                        boxShadow: "0 24px 60px rgba(0,0,0,0.15)",
                     }}>
                         {/* Header */}
                         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
@@ -855,7 +881,320 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                 </div>
             )}
+
+            {/* ── Audit Log Book Modal ─────────────────────────────────── */}
+            {showAuditBook && (
+                <AuditLogBook claimId={id} onClose={() => setShowAuditBook(false)} />
+            )}
         </AuthGuard>
+    );
+}
+
+// ── Audit Log Book (full-screen modal) ──────────────────────────────────────
+const AUDIT_BADGE: Record<string, { bg: string; color: string; border: string }> = {
+    CLAIM_SUBMITTED:    { bg: "rgba(16,185,129,0.08)", color: "#059669", border: "rgba(16,185,129,0.2)" },
+    CLAIM_STATUS_CHANGED: { bg: "rgba(124,58,237,0.08)", color: "#7c3aed", border: "rgba(124,58,237,0.2)" },
+    FRAUD_ANALYZED:     { bg: "rgba(220,38,38,0.08)", color: "#dc2626", border: "rgba(220,38,38,0.2)" },
+    DOCUMENT_UPLOADED:  { bg: "rgba(26,86,219,0.08)", color: "#1a56db", border: "rgba(26,86,219,0.2)" },
+    USER_LOGIN:         { bg: "rgba(100,116,139,0.08)", color: "#64748b", border: "rgba(100,116,139,0.2)" },
+    DOCUMENT_EXTRACTED: { bg: "rgba(217,119,6,0.08)", color: "#d97706", border: "rgba(217,119,6,0.2)" },
+    OCR_COMPLETED:      { bg: "rgba(13,148,136,0.08)", color: "#0d9488", border: "rgba(13,148,136,0.2)" },
+};
+function auditBadge(a: string) { return AUDIT_BADGE[a] || { bg: "rgba(100,116,139,0.08)", color: "#64748b", border: "rgba(100,116,139,0.2)" }; }
+function fmtAction(a: string) { return a.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+function fmtTime(ts: string | null | undefined) { if (!ts) return "—"; const d = new Date(ts); return isNaN(d.getTime()) ? "—" : d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }); }
+function fmtDate(ts: string | null | undefined) { if (!ts) return "—"; const d = new Date(ts); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }); }
+function fmtFullDate(ts: string | null | undefined) { if (!ts) return "—"; const d = new Date(ts); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); }
+
+function AuditAvatar({ action }: { action: string }) {
+    const b = auditBadge(action);
+    const initials = action.split("_").map(w => w[0]).join("").slice(0, 2);
+    return (
+        <div style={{
+            width: 36, height: 36, borderRadius: "50%",
+            background: b.bg, border: `1.5px solid ${b.border}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "0.675rem", fontWeight: 700, color: b.color,
+            flexShrink: 0, textTransform: "uppercase",
+        }}>{initials}</div>
+    );
+}
+
+function AuditLogBook({ claimId, onClose }: { claimId: string; onClose: () => void }) {
+    const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [filterText, setFilterText] = useState("");
+    const [page, setPage] = useState(0);
+    const pageSize = 12;
+
+    useEffect(() => {
+        setLoading(true);
+        complianceService.auditTrail(claimId, 100)
+            .then(setEntries)
+            .catch(() => setEntries([]))
+            .finally(() => setLoading(false));
+    }, [claimId]);
+
+    const filtered = filterText
+        ? entries.filter(e =>
+            fmtAction(e.action_type).toLowerCase().includes(filterText.toLowerCase()) ||
+            e.entity_type.toLowerCase().includes(filterText.toLowerCase())
+        ) : entries;
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const paged = filtered.slice(page * pageSize, (page + 1) * pageSize);
+
+    return (
+        <div
+            onClick={onClose}
+            style={{
+                position: "fixed", inset: 0, zIndex: 9999,
+                background: "rgba(15,23,42,0.45)", backdropFilter: "blur(6px)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                animation: "fadeIn 0.18s ease",
+            }}
+        >
+            <div
+                onClick={e => e.stopPropagation()}
+                style={{
+                    width: "min(820px, 92vw)", maxHeight: "88vh",
+                    background: "#ffffff", borderRadius: 18,
+                    boxShadow: "0 24px 80px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)",
+                    display: "flex", flexDirection: "column",
+                    animation: "slideUp 0.22s ease",
+                    overflow: "hidden",
+                }}
+            >
+                {/* ── Header ── */}
+                <div style={{
+                    padding: "20px 28px 16px",
+                    borderBottom: "1px solid #e8ecf1",
+                    display: "flex", alignItems: "center", gap: 12,
+                    background: "linear-gradient(135deg, #f0f4f8 0%, #ffffff 100%)",
+                }}>
+                    <div style={{
+                        width: 40, height: 40, borderRadius: 12,
+                        background: "linear-gradient(135deg, #1a56db, #2563eb)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                        <BookOpen size={18} color="#fff" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "#0f172a" }}>Audit Log Book</div>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                            Complete activity trail for claim <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "#1a56db" }}>{claimId.slice(0, 8)}</span>
+                        </div>
+                    </div>
+                    {entries.length > 0 && (
+                        <span style={{
+                            fontFamily: "var(--font-mono)", fontSize: "0.75rem",
+                            background: "#eef2ff", color: "#1a56db",
+                            borderRadius: 10, padding: "4px 14px", fontWeight: 700,
+                        }}>{entries.length} entries</span>
+                    )}
+                    <button
+                        onClick={onClose}
+                        style={{
+                            width: 34, height: 34, borderRadius: 10,
+                            border: "1px solid #e8ecf1", background: "#fff",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            cursor: "pointer", transition: "all 0.15s",
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = "#fee2e2"; e.currentTarget.style.borderColor = "#fca5a5"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.borderColor = "#e8ecf1"; }}
+                    >
+                        <X size={15} color="#64748b" />
+                    </button>
+                </div>
+
+                {/* ── Filter Bar ── */}
+                {entries.length > 0 && (
+                    <div style={{
+                        padding: "12px 28px", borderBottom: "1px solid #f1f5f9",
+                        display: "flex", alignItems: "center", gap: 10,
+                    }}>
+                        <div style={{
+                            flex: 1, display: "flex", alignItems: "center", gap: 8,
+                            background: "#f8fafc", border: "1px solid #e8ecf1",
+                            borderRadius: 10, padding: "8px 14px",
+                        }}>
+                            <Search size={14} color="#94a3b8" />
+                            <input
+                                type="text"
+                                placeholder="Search by action or entity..."
+                                value={filterText}
+                                onChange={e => { setFilterText(e.target.value); setPage(0); }}
+                                style={{
+                                    border: "none", background: "transparent", outline: "none",
+                                    fontSize: "0.8125rem", color: "#0f172a", width: "100%",
+                                }}
+                            />
+                            {filterText && (
+                                <button onClick={() => { setFilterText(""); setPage(0); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                                    <X size={12} color="#94a3b8" />
+                                </button>
+                            )}
+                        </div>
+                        <div style={{
+                            display: "flex", alignItems: "center", gap: 4,
+                            fontSize: "0.75rem", color: "#94a3b8",
+                        }}>
+                            <Filter size={13} color="#94a3b8" />
+                            <span>{filtered.length} result{filtered.length !== 1 ? "s" : ""}</span>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Table Header ── */}
+                {entries.length > 0 && !loading && (
+                    <div style={{
+                        display: "grid",
+                        gridTemplateColumns: "40px 1.4fr 0.7fr 0.6fr 100px",
+                        gap: 12, padding: "10px 28px",
+                        borderBottom: "1px solid #f1f5f9",
+                        alignItems: "center",
+                    }}>
+                        {["", "Action", "Entity", "Date", "Time"].map(h => (
+                            <span key={h} style={{
+                                fontSize: "0.675rem", color: "#94a3b8", fontWeight: 600,
+                                textTransform: "uppercase", letterSpacing: "0.06em",
+                                textAlign: h === "Time" ? "right" : "left",
+                            }}>{h}</span>
+                        ))}
+                    </div>
+                )}
+
+                {/* ── Entries ── */}
+                <div style={{ flex: 1, overflowY: "auto", padding: 0 }}>
+                    {loading && (
+                        <div style={{ padding: "24px 28px" }}>
+                            {[...Array(8)].map((_, i) => (
+                                <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+                                    <div className="skeleton" style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0 }} />
+                                    <div style={{ flex: 1 }}>
+                                        <div className="skeleton" style={{ height: 12, width: "65%", marginBottom: 6 }} />
+                                        <div className="skeleton" style={{ height: 8, width: "35%" }} />
+                                    </div>
+                                    <div className="skeleton" style={{ height: 10, width: 50 }} />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {!loading && entries.length === 0 && (
+                        <div style={{ padding: "60px 28px", textAlign: "center" }}>
+                            <Clock size={36} color="#cbd5e1" style={{ marginBottom: 12 }} />
+                            <div style={{ fontSize: "0.9375rem", color: "#64748b", fontWeight: 500 }}>No audit events recorded yet</div>
+                            <div style={{ fontSize: "0.8125rem", color: "#94a3b8", marginTop: 4 }}>Events will appear here as actions are taken on this claim.</div>
+                        </div>
+                    )}
+
+                    {paged.map((entry) => {
+                        const b = auditBadge(entry.action_type);
+                        const metaStr = entry.metadata && Object.keys(entry.metadata).length > 0
+                            ? JSON.stringify(entry.metadata).slice(0, 80) : null;
+
+                        return (
+                            <div
+                                key={entry.id}
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "40px 1.4fr 0.7fr 0.6fr 100px",
+                                    gap: 12, padding: "12px 28px",
+                                    borderBottom: "1px solid #f8fafc",
+                                    alignItems: "center",
+                                    transition: "background 0.12s",
+                                    cursor: "default",
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background = "#f8fafc"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                            >
+                                <AuditAvatar action={entry.action_type} />
+
+                                {/* Action + badge */}
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                        <span style={{
+                                            fontSize: "0.8125rem", fontWeight: 600, color: "#0f172a",
+                                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                        }}>{fmtAction(entry.action_type)}</span>
+                                        <span style={{
+                                            fontSize: "0.5625rem", fontWeight: 700,
+                                            background: b.bg, color: b.color,
+                                            border: `1px solid ${b.border}`,
+                                            borderRadius: 4, padding: "1px 7px",
+                                            textTransform: "uppercase", letterSpacing: "0.04em",
+                                            flexShrink: 0,
+                                        }}>{entry.action_type.split("_").pop()}</span>
+                                    </div>
+                                    {metaStr && (
+                                        <div style={{
+                                            fontSize: "0.6875rem", color: "#94a3b8",
+                                            fontFamily: "var(--font-mono)", marginTop: 2,
+                                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                        }}>{metaStr}{metaStr.length >= 80 ? "…" : ""}</div>
+                                    )}
+                                </div>
+
+                                {/* Entity */}
+                                <span style={{
+                                    fontSize: "0.75rem", color: "#64748b",
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>{entry.entity_type}</span>
+
+                                {/* Date */}
+                                <span style={{ fontSize: "0.75rem", color: "#0f172a", fontWeight: 500 }}>
+                                    {fmtDate(entry.timestamp)}
+                                </span>
+
+                                {/* Time */}
+                                <div style={{ textAlign: "right" }}>
+                                    <div style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", color: "#0f172a", fontWeight: 500 }}>
+                                        {fmtTime(entry.timestamp)}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* ── Pagination Footer ── */}
+                {filtered.length > pageSize && (
+                    <div style={{
+                        padding: "12px 28px", borderTop: "1px solid #e8ecf1",
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        fontSize: "0.75rem", color: "#64748b",
+                    }}>
+                        <span>{filtered.length} total entries</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontWeight: 600 }}>Page {page + 1} / {totalPages}</span>
+                            <button
+                                onClick={() => setPage(Math.max(0, page - 1))}
+                                disabled={page === 0}
+                                style={{
+                                    width: 28, height: 28, borderRadius: 8,
+                                    border: "1px solid #e8ecf1", background: page === 0 ? "#f8fafc" : "#fff",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    cursor: page === 0 ? "default" : "pointer",
+                                    opacity: page === 0 ? 0.4 : 1, transition: "all 0.15s",
+                                }}
+                            ><ChevronLeft size={13} /></button>
+                            <button
+                                onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                                disabled={page >= totalPages - 1}
+                                style={{
+                                    width: 28, height: 28, borderRadius: 8,
+                                    border: "1px solid #e8ecf1", background: page >= totalPages - 1 ? "#f8fafc" : "#fff",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    cursor: page >= totalPages - 1 ? "default" : "pointer",
+                                    opacity: page >= totalPages - 1 ? 0.4 : 1, transition: "all 0.15s",
+                                }}
+                            ><ChevronRight size={13} /></button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
     );
 }
 
@@ -928,10 +1267,26 @@ function ClaimTimeline({ entries, loading, documents, claimCreatedAt }: {
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
     return (
-        <div className="panel" style={{ padding: 18, marginTop: 16 }}>
-            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
-                <Clock size={12} />
+        <div style={{
+            background: "#fff", border: "1px solid #e8ecf1", borderRadius: 14,
+            padding: "20px 22px", marginTop: 16,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+        }}>
+            <div style={{
+                fontSize: "0.875rem", color: "#0f172a", fontWeight: 700,
+                marginBottom: 18, display: "flex", alignItems: "center", gap: 8,
+            }}>
+                <Clock size={14} color="#1a56db" />
                 Claim Timeline
+                {events.length > 0 && (
+                    <span style={{
+                        marginLeft: "auto", fontFamily: "var(--font-mono)",
+                        fontSize: "0.6875rem", color: "#94a3b8",
+                        background: "#f1f5f9", borderRadius: 10, padding: "2px 10px",
+                    }}>
+                        {events.length} events
+                    </span>
+                )}
             </div>
 
             {loading && (

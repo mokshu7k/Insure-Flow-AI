@@ -55,30 +55,31 @@ const DOC_CONFIG: Record<ClaimType, DocSpec[]> = {
 function StepBar({ current }: { current: number }) {
     const steps = ["Consent", "Policy", "Documents", "Confirm"];
     return (
-        <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 0, marginBottom: 32, padding: "0 8px" }}>
             {steps.map((label, i) => {
                 const n = i + 1;
                 const done = n < current;
                 const active = n === current;
                 return (
                     <div key={n} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : undefined }}>
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                            <div style={{
-                                width: 26, height: 26, borderRadius: "50%",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: "0.6875rem", fontWeight: 600,
-                                background: done ? "var(--green)" : active ? "var(--blue)" : "var(--bg-surface)",
-                                border: done ? "none" : active ? "none" : "1px solid var(--border)",
-                                color: (done || active) ? "#fff" : "var(--text-muted)",
-                            }}>
-                                {done ? <CheckCircle2 size={14} /> : n}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 48 }}>
+                            <div className={`step-circle ${done ? "done" : active ? "active" : "pending"}`}>
+                                {done ? <CheckCircle2 size={18} /> : n}
                             </div>
-                            <span style={{ fontSize: "0.625rem", color: active ? "var(--text-primary)" : "var(--text-muted)", whiteSpace: "nowrap" }}>
+                            <span style={{
+                                fontSize: "0.6875rem",
+                                fontWeight: active ? 600 : 400,
+                                color: active ? "var(--blue)" : done ? "var(--green)" : "var(--text-muted)",
+                                whiteSpace: "nowrap",
+                                transition: "all 0.3s",
+                            }}>
                                 {label}
                             </span>
                         </div>
                         {i < steps.length - 1 && (
-                            <div style={{ flex: 1, height: 1, background: done ? "var(--green)" : "var(--border)", margin: "0 6px", marginBottom: 16 }} />
+                            <div className={`step-connector ${done ? "done" : ""}`} style={{ marginBottom: 22 }}>
+                                {active && <div className="fill" style={{ width: "50%" }} />}
+                            </div>
                         )}
                     </div>
                 );
@@ -254,9 +255,9 @@ function FileZone({
                 border: "1px solid rgba(245,158,11,0.35)",
                 borderRadius: 6,
             }}>
-                <AlertTriangle size={13} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
+                <AlertTriangle size={13} color="var(--amber)" style={{ flexShrink: 0, marginTop: 1 }} />
                 <div style={{ fontSize: "0.6875rem", lineHeight: 1.45 }}>
-                    <span style={{ fontWeight: 600, color: "#f59e0b" }}>{spec.label} — document rejected: </span>
+                    <span style={{ fontWeight: 600, color: "var(--amber)" }}>{spec.label} — document rejected: </span>
                     <span style={{ color: "var(--text-primary)" }}>{validationError}</span>
                     <div style={{ color: "var(--text-muted)", marginTop: 2 }}>Please remove this file and upload the correct document.</div>
                 </div>
@@ -330,7 +331,7 @@ function InlineOcrCard({
                     <CheckCircle2 size={11} />
                     {entries.length} field{entries.length !== 1 ? "s" : ""} extracted
                     {result.completeness > 0 && (
-                        <span style={{ color: result.completeness >= 0.7 ? "var(--green)" : "#f59e0b", fontFamily: "var(--font-mono)", marginLeft: 2 }}>
+                        <span style={{ color: result.completeness >= 0.7 ? "var(--green)" : "var(--amber)", fontFamily: "var(--font-mono)", marginLeft: 2 }}>
                             · {Math.round(result.completeness * 100)}% complete
                         </span>
                     )}
@@ -512,7 +513,7 @@ function InlineOcrCard({
             {hasMissing && (
                 <div style={{ marginTop: entries.length > 0 ? 10 : 0 }}>
                     <div style={{
-                        fontSize: "0.625rem", color: "#f59e0b", fontWeight: 600,
+                        fontSize: "0.625rem", color: "var(--amber)", fontWeight: 600,
                         display: "flex", gap: 4, alignItems: "center", marginBottom: 6,
                     }}>
                         <AlertTriangle size={10} />
@@ -522,7 +523,7 @@ function InlineOcrCard({
                         {result.missing_fields.map((k) => (
                             <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                                 <span style={{
-                                    fontSize: "0.625rem", color: "#f59e0b", textTransform: "capitalize",
+                                    fontSize: "0.625rem", color: "var(--amber)", textTransform: "capitalize",
                                     flexShrink: 0, width: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                 }}>
                                     {k.replace(/_/g, " ")}
@@ -1012,14 +1013,21 @@ function WizardContent() {
             <CommandLayout header={
                 <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>New Claim</span>
             }>
-                <div style={{ maxWidth: 520, margin: "40px auto", textAlign: "center" }}>
-                    <CheckCircle2 size={48} color="var(--green)" style={{ margin: "0 auto 16px" }} />
-                    <h2 style={{ fontSize: "1.125rem", fontWeight: 600, marginBottom: 8 }}>Claim submitted</h2>
-                    <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginBottom: 24 }}>
-                        Your claim has been received and is under review.
+                <div className="animate-fade-up" style={{ maxWidth: 520, margin: "48px auto", textAlign: "center" }}>
+                    <div className="animate-success" style={{
+                        width: 72, height: 72, borderRadius: "50%",
+                        background: "rgba(34, 197, 94, 0.1)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        margin: "0 auto 20px",
+                    }}>
+                        <CheckCircle2 size={36} color="var(--green)" />
+                    </div>
+                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: 8 }}>Claim Submitted Successfully</h2>
+                    <p style={{ color: "var(--text-muted)", fontSize: "0.875rem", marginBottom: 28, lineHeight: 1.6 }}>
+                        Your claim has been received and is now being processed. You&apos;ll be notified of any updates to your claim status.
                     </p>
-                    <button className="btn btn-primary" onClick={() => router.push("/claims")}>
-                        View my claims <ArrowRight size={14} />
+                    <button className="btn btn-primary" onClick={() => router.push("/claims")} style={{ borderRadius: 10, padding: "10px 28px", fontWeight: 600, gap: 6 }}>
+                        View My Claims <ArrowRight size={14} />
                     </button>
                 </div>
             </CommandLayout>
@@ -1061,21 +1069,38 @@ function WizardContent() {
     // ── Wizard layout ─────────────────────────────────────────────────────────
     return (
         <CommandLayout header={
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <FileText size={15} color="var(--text-muted)" />
-                <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>New Claim</span>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Step {step} of 4</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                    width: 32, height: 32, borderRadius: 10,
+                    background: "rgba(26, 86, 219, 0.1)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                    <FileText size={16} color="var(--blue)" />
+                </div>
+                <div>
+                    <span style={{ fontSize: "0.9375rem", fontWeight: 700 }}>New Claim</span>
+                    <span className="stat-badge" style={{ marginLeft: 10 }}>Step {step} of 4</span>
+                </div>
             </div>
         }>
-            <div style={{ maxWidth: 600, margin: "0 auto", padding: "24px 0" }}>
+            <div style={{ maxWidth: 640, margin: "0 auto", padding: "28px 16px" }}>
                 <StepBar current={step} />
 
                 {/* ── Step 1: Consent ─────────────────────────────────────── */}
                 {step === 1 && !consentChecking && (
-                    <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                            <Shield size={20} color="var(--blue)" />
-                            <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Data consent &amp; conditions</h2>
+                    <div className="wizard-card" key="step1">
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                            <div style={{
+                                width: 40, height: 40, borderRadius: 10,
+                                background: "rgba(26, 86, 219, 0.08)",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                                <Shield size={20} color="var(--blue)" />
+                            </div>
+                            <div>
+                                <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, margin: 0 }}>Data Consent &amp; Conditions</h2>
+                                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", margin: 0 }}>Please review before proceeding</p>
+                            </div>
                         </div>
                         <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", lineHeight: 1.6, marginBottom: 20 }}>
                             Before filing a claim, please read and accept how InsureFlow&nbsp;AI handles your personal
@@ -1084,8 +1109,8 @@ function WizardContent() {
 
                         {/* Info box */}
                         <div style={{
-                            border: "1px solid var(--border)", borderRadius: 8,
-                            padding: "14px 16px", background: "var(--bg-surface)", marginBottom: 20,
+                            border: "1px solid var(--border)", borderRadius: 12,
+                            padding: "16px 18px", background: "var(--bg-surface)", marginBottom: 22,
                             fontSize: "0.8125rem", lineHeight: 1.7,
                         }}>
                             <p style={{ fontWeight: 600, marginBottom: 8 }}>What data we collect &amp; why</p>
@@ -1163,7 +1188,7 @@ function WizardContent() {
                             className="btn btn-primary"
                             disabled={!consentData || !consentTerms || consentLoading}
                             onClick={handleGiveConsent}
-                            style={{ width: "100%" }}
+                            style={{ width: "100%", borderRadius: 10, padding: "11px 0", fontWeight: 600 }}
                         >
                             {consentLoading ? (
                                 <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Recording consent…</>
@@ -1176,10 +1201,19 @@ function WizardContent() {
 
                 {/* ── Step 2: Select policy ────────────────────────────────── */}
                 {step === 2 && (
-                    <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                            <Building2 size={18} color="var(--blue)" />
-                            <h2 style={{ fontSize: "1rem", fontWeight: 600 }}>Choose a policy to claim</h2>
+                    <div className="wizard-card" key="step2">
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                            <div style={{
+                                width: 40, height: 40, borderRadius: 10,
+                                background: "rgba(26, 86, 219, 0.08)",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                                <Building2 size={20} color="var(--blue)" />
+                            </div>
+                            <div>
+                                <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, margin: 0 }}>Choose a Policy</h2>
+                                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", margin: 0 }}>Select the policy to claim against</p>
+                            </div>
                         </div>
                         <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
                             Select the policy you&apos;d like to file a claim against. Required documents will be shown automatically.
@@ -1195,7 +1229,7 @@ function WizardContent() {
                             </div>
                         ) : (
                             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
-                                {myPolicies.filter(p => p.status === "ACTIVE").map((pol) => {
+                                {myPolicies.filter(p => p.status === "ACTIVE").map((pol, idx) => {
                                     const selected = selectedPolicy?.id === pol.id;
                                     const typeColor = pol.policy_type === "HEALTH" ? "var(--green)"
                                         : pol.policy_type === "MOTOR" ? "var(--blue)"
@@ -1203,16 +1237,19 @@ function WizardContent() {
                                     return (
                                         <button
                                             key={pol.id}
+                                            className={`animate-fade-up stagger-${Math.min(idx + 1, 10)}`}
                                             onClick={() => setSelectedPolicy(selected ? null : pol)}
                                             style={{
-                                                border: `1px solid ${selected ? typeColor : "var(--border)"}`,
-                                                borderRadius: 8,
-                                                padding: "14px 16px",
-                                                background: selected ? `${typeColor}12` : "var(--bg-surface)",
+                                                border: `1.5px solid ${selected ? typeColor : "var(--border)"}`,
+                                                borderRadius: 12,
+                                                padding: "16px 18px",
+                                                background: selected ? `${typeColor}08` : "var(--bg-surface)",
                                                 cursor: "pointer",
                                                 textAlign: "left",
-                                                transition: "all 150ms",
+                                                transition: "all 0.25s cubic-bezier(0.4, 0, 0.2, 1)",
                                                 width: "100%",
+                                                boxShadow: selected ? `0 2px 12px ${typeColor}20` : "none",
+                                                transform: selected ? "scale(1.01)" : "scale(1)",
                                             }}
                                         >
                                             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
@@ -1253,9 +1290,9 @@ function WizardContent() {
 
                         {/* Show required docs preview when policy selected */}
                         {selectedPolicy && !reqLoading && docRequirements.length > 0 && (
-                            <div style={{
-                                border: "1px solid var(--border)", borderRadius: 8, padding: "12px 14px",
-                                background: "var(--bg-surface)", marginBottom: 16,
+                            <div className="animate-fade-up" style={{
+                                border: "1px solid var(--border)", borderRadius: 12, padding: "14px 16px",
+                                background: "var(--bg-surface)", marginBottom: 18,
                             }}>
                                 <div style={{ fontSize: "0.75rem", fontWeight: 600, marginBottom: 8, color: "var(--text-muted)" }}>
                                     Required documents ({docRequirements.filter(r => r.is_compulsory).length} mandatory)
@@ -1280,7 +1317,7 @@ function WizardContent() {
                         {selectedPolicy && !reqLoading && docRequirements.length === 0 && (
                             <div style={{
                                 border: "1px solid rgba(245,158,11,0.35)", borderRadius: 6, padding: "10px 12px",
-                                background: "rgba(245,158,11,0.06)", fontSize: "0.75rem", color: "#f59e0b",
+                                background: "rgba(245,158,11,0.06)", fontSize: "0.75rem", color: "var(--amber)",
                                 marginBottom: 14,
                             }}>
                                 No template-driven requirements found for this policy type. You&apos;ll be able to upload any relevant documents in the next step.
@@ -1291,7 +1328,7 @@ function WizardContent() {
                             className="btn btn-primary"
                             disabled={!selectedPolicy || reqLoading}
                             onClick={() => setStep(3)}
-                            style={{ width: "100%" }}
+                            style={{ width: "100%", borderRadius: 10, padding: "11px 0", fontWeight: 600 }}
                         >
                             {reqLoading ? (
                                 <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Loading requirements…</>
@@ -1309,13 +1346,23 @@ function WizardContent() {
                     const hasInvalidDocs = [...docOcrResults.values()].some(r => !r.is_relevant);
                     const canUpload = allRequiredHaveFiles && !anyProcessing && !hasInvalidDocs;
                     return (
-                        <div>
-                            <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>
-                                {TYPE_META[claimType as keyof typeof TYPE_META]?.title ?? claimType} — Documents
-                            </h2>
-                            <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
-                                Upload supporting documents. Each file is immediately extracted and verified by AI — you can review and edit the data before saving.
-                            </p>
+                        <div className="wizard-card" key="step3">
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                                <div style={{
+                                    width: 40, height: 40, borderRadius: 10,
+                                    background: `${TYPE_META[claimType as keyof typeof TYPE_META]?.color ?? "var(--blue)"}12`,
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    color: TYPE_META[claimType as keyof typeof TYPE_META]?.color ?? "var(--blue)",
+                                }}>
+                                    {TYPE_META[claimType as keyof typeof TYPE_META]?.icon ?? <FileText size={20} />}
+                                </div>
+                                <div>
+                                    <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, margin: 0 }}>
+                                        {TYPE_META[claimType as keyof typeof TYPE_META]?.title ?? claimType} — Documents
+                                    </h2>
+                                    <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", margin: 0 }}>Upload and verify supporting documents</p>
+                                </div>
+                            </div>
 
                             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 20 }}>
                                 {specs.map((spec, idx) => {
@@ -1449,7 +1496,7 @@ function WizardContent() {
                                     display: "flex", gap: 8, alignItems: "center",
                                     padding: "8px 12px", borderRadius: 6, marginBottom: 12,
                                     background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)",
-                                    fontSize: "0.75rem", color: "#f59e0b", fontWeight: 500,
+                                    fontSize: "0.75rem", color: "var(--amber)", fontWeight: 500,
                                 }}>
                                     <AlertTriangle size={14} />
                                     {docErrors.size === 1 ? "1 document" : `${docErrors.size} documents`} failed server validation — see details above.
@@ -1461,8 +1508,8 @@ function WizardContent() {
                                 </div>
                             )}
 
-                            <div style={{ display: "flex", gap: 8 }}>
-                                <button className="btn btn-ghost" onClick={() => setStep(2)}>
+                            <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                                <button className="btn btn-ghost" onClick={() => setStep(2)} style={{ borderRadius: 10, padding: "10px 18px" }}>
                                     <ChevronLeft size={14} /> Back
                                 </button>
                                 {anyProcessing && (
@@ -1497,15 +1544,24 @@ function WizardContent() {
 
                 {/* ── Step 4: Confirm + submit ─────────────────────────────── */}
                 {step === 4 && claimType && (
-                    <div>
-                        <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>Confirm your claim</h2>
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
-                            Review the details below before submitting.
-                        </p>
+                    <div className="wizard-card" key="step4">
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                            <div style={{
+                                width: 40, height: 40, borderRadius: 10,
+                                background: "rgba(34, 197, 94, 0.08)",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                                <CheckCircle2 size={20} color="var(--green)" />
+                            </div>
+                            <div>
+                                <h2 style={{ fontSize: "1.0625rem", fontWeight: 700, margin: 0 }}>Confirm Your Claim</h2>
+                                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", margin: 0 }}>Review details before submitting</p>
+                            </div>
+                        </div>
 
                         {/* Amount + description — pre-filled from inline OCR, editable here */}
-                        <div style={{ marginBottom: 14 }}>
-                            <label style={{ fontSize: "0.75rem", fontWeight: 500, display: "block", marginBottom: 4 }}>
+                        <div style={{ marginBottom: 16 }}>
+                            <label style={{ fontSize: "0.8125rem", fontWeight: 600, display: "block", marginBottom: 6 }}>
                                 Claim Amount (₹) <span style={{ color: "var(--red, #ef4444)" }}>*</span>
                             </label>
                             <input
@@ -1515,11 +1571,11 @@ function WizardContent() {
                                 value={claimAmount}
                                 onChange={(e) => setClaimAmount(e.target.value)}
                                 placeholder="Enter amount"
-                                style={{ width: "100%", boxSizing: "border-box" }}
+                                style={{ width: "100%", boxSizing: "border-box", borderRadius: 10, padding: "10px 14px" }}
                             />
                         </div>
-                        <div style={{ marginBottom: 20 }}>
-                            <label style={{ fontSize: "0.75rem", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                        <div style={{ marginBottom: 22 }}>
+                            <label style={{ fontSize: "0.8125rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                                 <span>Description</span>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                     {/* Language toggle */}
@@ -1598,8 +1654,8 @@ function WizardContent() {
                         </div>
 
                         <div style={{
-                            border: "1px solid var(--border)", borderRadius: 8,
-                            overflow: "hidden", marginBottom: 20,
+                            border: "1px solid var(--border)", borderRadius: 12,
+                            overflow: "hidden", marginBottom: 22,
                         }}>
                             {[
                                 { label: "Claim type", value: (claimType && TYPE_META[claimType as keyof typeof TYPE_META]?.title) ?? claimType ?? "—" },
@@ -1608,13 +1664,11 @@ function WizardContent() {
                                 { label: "Documents", value: `${uploadedDocs.length} uploaded` },
                                 { label: "Description", value: description || "—" },
                             ].map(({ label, value }, i) => (
-                                <div key={label} style={{
-                                    display: "flex", gap: 12, padding: "10px 14px",
-                                    borderBottom: i < 4 ? "1px solid var(--border)" : undefined,
+                                <div key={label} className="summary-row" style={{
                                     background: i % 2 === 0 ? "var(--bg-surface)" : "transparent",
                                 }}>
-                                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", minWidth: 110 }}>{label}</span>
-                                    <span style={{ fontSize: "0.75rem", fontWeight: 500 }}>{value}</span>
+                                    <span style={{ fontSize: "0.8125rem", color: "var(--text-muted)", minWidth: 120, fontWeight: 500 }}>{label}</span>
+                                    <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "var(--text-primary)" }}>{value}</span>
                                 </div>
                             ))}
                         </div>
@@ -1625,15 +1679,15 @@ function WizardContent() {
                             </div>
                         )}
 
-                        <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn btn-ghost" onClick={() => setStep(3)}>
+                        <div style={{ display: "flex", gap: 10 }}>
+                            <button className="btn btn-ghost" onClick={() => setStep(3)} style={{ borderRadius: 10, padding: "10px 18px" }}>
                                 <ChevronLeft size={14} /> Back
                             </button>
                             <button
                                 className="btn btn-primary"
                                 disabled={submitting}
                                 onClick={handleSubmit}
-                                style={{ flex: 1 }}
+                                style={{ flex: 1, borderRadius: 10, padding: "11px 0", fontWeight: 600 }}
                             >
                                 {submitting ? (
                                     <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Submitting…</>

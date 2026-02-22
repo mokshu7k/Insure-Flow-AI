@@ -146,24 +146,24 @@ function parseReport(text: string): Section[] {
 // ─── palette helpers ─────────────────────────────────────────────────────────
 
 const SECTION_META: Record<SectionKind, { icon: React.ReactNode; color: string; bg: string; border: string; label: string }> = {
-    claimant_summary:  { icon: <User size={15} />,          color: "#60a5fa", bg: "rgba(96,165,250,0.08)",  border: "rgba(96,165,250,0.25)",  label: "Claimant Summary" },
-    claim_details:     { icon: <FileText size={15} />,      color: "#a78bfa", bg: "rgba(167,139,250,0.08)", border: "rgba(167,139,250,0.25)", label: "Claim Details" },
-    document_analysis: { icon: <FileSearch size={15} />,    color: "#34d399", bg: "rgba(52,211,153,0.08)",  border: "rgba(52,211,153,0.25)",  label: "Document Analysis" },
-    discrepancies:     { icon: <AlertTriangle size={15} />, color: "#f97316", bg: "rgba(249,115,22,0.08)",  border: "rgba(249,115,22,0.25)",  label: "Discrepancies Found" },
-    fraud_assessment:  { icon: <ShieldAlert size={15} />,   color: "#fb923c", bg: "rgba(251,146,60,0.08)",  border: "rgba(251,146,60,0.25)",  label: "Fraud Assessment" },
-    recommendation:    { icon: <Lightbulb size={15} />,     color: "#facc15", bg: "rgba(250,204,21,0.08)",  border: "rgba(250,204,21,0.25)",  label: "AI Recommendation" },
-    action_items:      { icon: <ListChecks size={15} />,    color: "#38bdf8", bg: "rgba(56,189,248,0.08)",  border: "rgba(56,189,248,0.25)",  label: "Action Items" },
+    claimant_summary:  { icon: <User size={15} />,          color: "#2563eb", bg: "rgba(37,99,235,0.06)",   border: "rgba(37,99,235,0.2)",   label: "Claimant Summary" },
+    claim_details:     { icon: <FileText size={15} />,      color: "#7c3aed", bg: "rgba(124,58,237,0.06)",  border: "rgba(124,58,237,0.2)",  label: "Claim Details" },
+    document_analysis: { icon: <FileSearch size={15} />,    color: "#059669", bg: "rgba(5,150,105,0.06)",   border: "rgba(5,150,105,0.2)",   label: "Document Analysis" },
+    discrepancies:     { icon: <AlertTriangle size={15} />, color: "#ea580c", bg: "rgba(234,88,12,0.06)",   border: "rgba(234,88,12,0.2)",   label: "Discrepancies Found" },
+    fraud_assessment:  { icon: <ShieldAlert size={15} />,   color: "#dc2626", bg: "rgba(220,38,38,0.06)",   border: "rgba(220,38,38,0.2)",   label: "Fraud Assessment" },
+    recommendation:    { icon: <Lightbulb size={15} />,     color: "#ca8a04", bg: "rgba(202,138,4,0.06)",   border: "rgba(202,138,4,0.2)",   label: "AI Recommendation" },
+    action_items:      { icon: <ListChecks size={15} />,    color: "#0284c7", bg: "rgba(2,132,199,0.06)",   border: "rgba(2,132,199,0.2)",   label: "Action Items" },
     unknown:           { icon: <FileText size={15} />,      color: "var(--text-muted)", bg: "transparent", border: "var(--border)", label: "Note" },
 };
 
 const VERDICT_STYLE: Record<string, { color: string; bg: string; border: string; icon: React.ReactNode }> = {
-    REJECT:          { color: "#f87171", bg: "rgba(248,113,113,0.12)", border: "rgba(248,113,113,0.4)",  icon: <XCircle size={22} /> },
-    REJECTED:        { color: "#f87171", bg: "rgba(248,113,113,0.12)", border: "rgba(248,113,113,0.4)",  icon: <XCircle size={22} /> },
-    APPROVE:         { color: "#4ade80", bg: "rgba(74,222,128,0.12)",  border: "rgba(74,222,128,0.4)",   icon: <CheckCircle size={22} /> },
-    APPROVED:        { color: "#4ade80", bg: "rgba(74,222,128,0.12)",  border: "rgba(74,222,128,0.4)",   icon: <CheckCircle size={22} /> },
-    MANUAL_REVIEW:   { color: "#facc15", bg: "rgba(250,204,21,0.12)",  border: "rgba(250,204,21,0.4)",   icon: <Clock size={22} /> },
-    REVIEW:          { color: "#facc15", bg: "rgba(250,204,21,0.12)",  border: "rgba(250,204,21,0.4)",   icon: <Clock size={22} /> },
-    INVESTIGATE:     { color: "#f97316", bg: "rgba(249,115,22,0.12)",  border: "rgba(249,115,22,0.4)",   icon: <AlertCircle size={22} /> },
+    REJECT:          { color: "#dc2626", bg: "rgba(220,38,38,0.08)",   border: "rgba(220,38,38,0.3)",   icon: <XCircle size={22} /> },
+    REJECTED:        { color: "#dc2626", bg: "rgba(220,38,38,0.08)",   border: "rgba(220,38,38,0.3)",   icon: <XCircle size={22} /> },
+    APPROVE:         { color: "#16a34a", bg: "rgba(22,163,74,0.08)",   border: "rgba(22,163,74,0.3)",   icon: <CheckCircle size={22} /> },
+    APPROVED:        { color: "#16a34a", bg: "rgba(22,163,74,0.08)",   border: "rgba(22,163,74,0.3)",   icon: <CheckCircle size={22} /> },
+    MANUAL_REVIEW:   { color: "#ca8a04", bg: "rgba(202,138,4,0.08)",   border: "rgba(202,138,4,0.3)",   icon: <Clock size={22} /> },
+    REVIEW:          { color: "#ca8a04", bg: "rgba(202,138,4,0.08)",   border: "rgba(202,138,4,0.3)",   icon: <Clock size={22} /> },
+    INVESTIGATE:     { color: "#ea580c", bg: "rgba(234,88,12,0.08)",   border: "rgba(234,88,12,0.3)",   icon: <AlertCircle size={22} /> },
 };
 
 const VERDICT_KEYWORDS = ["APPROVE", "REJECT", "MANUAL REVIEW", "MANUAL_REVIEW", "INVESTIGATE"] as const;
@@ -225,8 +225,8 @@ function SectionCard({ section }: { section: Section }) {
                 {section.kind === "claim_details"     && <ClaimDetailsBody section={section} />}
                 {section.kind === "document_analysis" && <DocumentAnalysisBody section={section} />}
                 {section.kind === "recommendation"    && <RecommendationBody section={section} />}
-                {section.kind === "discrepancies"     && <BulletBody section={section} color="#f97316" />}
-                {section.kind === "fraud_assessment"  && <BulletBody section={section} color="#fb923c" />}
+                {section.kind === "discrepancies"     && <BulletBody section={section} color="#ea580c" />}
+                {section.kind === "fraud_assessment"  && <BulletBody section={section} color="#dc2626" />}
                 {section.kind === "action_items"      && <ActionItemsBody section={section} />}
                 {(section.kind === "claimant_summary" || section.kind === "unknown") && (
                     <ParagraphBody section={section} />
@@ -302,8 +302,8 @@ function DocumentAnalysisBody({ section }: { section: Section }) {
                             gap: 8,
                             borderBottom: "1px solid rgba(52,211,153,0.15)",
                         }}>
-                            <FileText size={13} color="#34d399" />
-                            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#34d399" }}>{docType}</span>
+                            <FileText size={13} color="#059669" />
+                            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#059669" }}>{docType}</span>
                             {fileName && (
                                 <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontStyle: "italic" }}>({fileName})</span>
                             )}
@@ -311,7 +311,7 @@ function DocumentAnalysisBody({ section }: { section: Section }) {
                         <div style={{ padding: "8px 12px" }}>
                             {doc.bullets.map((b, j) => (
                                 <div key={j} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 5 }}>
-                                    <span style={{ color: "#34d399", fontSize: "0.75rem", flexShrink: 0, marginTop: 3 }}>•</span>
+                                    <span style={{ color: "#059669", fontSize: "0.75rem", flexShrink: 0, marginTop: 3 }}>•</span>
                                     <span style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.65 }}>{b}</span>
                                 </div>
                             ))}
@@ -364,7 +364,7 @@ function ActionItemsBody({ section }: { section: Section }) {
                 }}>
                     <div style={{
                         background: "rgba(56,189,248,0.2)",
-                        color: "#38bdf8",
+                        color: "#0284c7",
                         borderRadius: "50%",
                         width: 20,
                         height: 20,

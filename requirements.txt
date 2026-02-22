@@ -47,8 +47,9 @@ imagehash
 opencv-python
 scikit-image
 pytesseract
+PyMuPDF
 # Fuzzy matching for name/entity reconciliation
-thefuzz
+thefuzz[speedup]
 # ML scoring
 scikit-learn
 numpy

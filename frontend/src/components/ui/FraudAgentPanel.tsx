@@ -303,82 +303,117 @@ export function FraudAgentPanel({
     const analyzedDoc = documents.find((d) => d.id === analyzedDocId);
 
     return (
-        <div style={{ padding: 20 }}>
-            {/* Header + run button */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                <div style={{
-                    fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600,
-                    textTransform: "uppercase", letterSpacing: "0.06em",
-                    display: "flex", alignItems: "center", gap: 6,
-                }}>
-                    <ShieldAlert size={13} />
-                    Fraud Agent Intelligence
-                </div>
-            </div>
-
-            {/* Document selector + run button */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 14, alignItems: "flex-end" }}>
-                <div style={{ flex: 1 }}>
+        <div style={{ padding: "24px 28px" }}>
+            {/* Hero header */}
+            <div style={{
+                background: "linear-gradient(135deg, rgba(124,58,237,0.06), rgba(26,86,219,0.06))",
+                border: "1px solid rgba(124,58,237,0.12)",
+                borderRadius: 14, padding: "20px 22px", marginBottom: 20,
+            }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
                     <div style={{
-                        fontSize: "0.625rem", color: "var(--text-muted)",
-                        textTransform: "uppercase", letterSpacing: "0.04em",
-                        marginBottom: 4,
+                        width: 38, height: 38, borderRadius: 10,
+                        background: "linear-gradient(135deg, #7c3aed, #1a56db)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        flexShrink: 0,
                     }}>
-                        Target document
+                        <ShieldAlert size={18} color="#fff" />
                     </div>
-                    <select
-                        className="input"
-                        style={{ width: "100%", fontSize: "0.75rem", height: 30 }}
-                        value={selectedDocId}
-                        onChange={(e) => setSelectedDocId(e.target.value)}
-                        disabled={isLoading}
-                    >
-                        <option value="">Auto (first completed)</option>
-                        {completedDocs.map((d) => (
-                            <option key={d.id} value={d.id}>
-                                {d.document_type.replace(/_/g, " ")}
-                                {d.original_filename ? ` — ${d.original_filename}` : ""}
-                            </option>
-                        ))}
-                    </select>
+                    <div>
+                        <div style={{ fontSize: "1rem", fontWeight: 800, color: "#0f172a" }}>
+                            Fraud Agent Intelligence
+                        </div>
+                        <div style={{ fontSize: "0.6875rem", color: "#64748b", marginTop: 2 }}>
+                            6-layer AI-powered fraud detection engine
+                        </div>
+                    </div>
                 </div>
-                <button
-                    className="btn btn-ghost"
-                    onClick={runAgentAnalysis}
-                    disabled={isLoading || documents.length === 0}
-                    style={{ padding: "4px 12px", height: 30, display: "flex", alignItems: "center", gap: 5 }}
-                >
-                    {analyzing ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Zap size={13} />}
-                    {analyzing ? "Analyzing…" : assessment ? "Re-run" : "Analyze"}
-                </button>
+
+                {/* Document selector + run button */}
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{
+                            fontSize: "0.625rem", color: "#64748b",
+                            textTransform: "uppercase", letterSpacing: "0.05em",
+                            marginBottom: 5, fontWeight: 600,
+                        }}>
+                            Target document
+                        </div>
+                        <select
+                            className="input"
+                            style={{
+                                width: "100%", fontSize: "0.8125rem", height: 36,
+                                borderRadius: 10, background: "#fff", border: "1px solid #e2e8f0",
+                            }}
+                            value={selectedDocId}
+                            onChange={(e) => setSelectedDocId(e.target.value)}
+                            disabled={isLoading}
+                        >
+                            <option value="">Auto (first completed)</option>
+                            {completedDocs.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                    {d.document_type.replace(/_/g, " ")}
+                                    {d.original_filename ? ` — ${d.original_filename}` : ""}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <button
+                        onClick={runAgentAnalysis}
+                        disabled={isLoading || documents.length === 0}
+                        style={{
+                            padding: "0 20px", height: 36, display: "flex", alignItems: "center", gap: 6,
+                            background: "linear-gradient(135deg, #7c3aed, #1a56db)",
+                            color: "#fff", border: "none", borderRadius: 10,
+                            fontSize: "0.8125rem", fontWeight: 700, cursor: "pointer",
+                            opacity: (isLoading || documents.length === 0) ? 0.5 : 1,
+                            transition: "all 0.15s",
+                            boxShadow: "0 2px 8px rgba(124,58,237,0.25)",
+                        }}
+                    >
+                        {analyzing ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Zap size={14} />}
+                        {analyzing ? "Analyzing…" : assessment ? "Re-run" : "Analyze"}
+                    </button>
+                </div>
             </div>
 
             {/* Error */}
             {error && (
                 <div style={{
-                    background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)",
-                    borderRadius: 6, padding: "8px 12px", marginBottom: 14,
-                    fontSize: "0.75rem", color: "var(--crimson)",
+                    background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.18)",
+                    borderRadius: 10, padding: "12px 16px", marginBottom: 18,
+                    fontSize: "0.8125rem", color: "#dc2626",
+                    display: "flex", alignItems: "center", gap: 8,
                 }}>
+                    <XCircle size={14} />
                     {error}
                 </div>
             )}
 
             {/* Empty state */}
             {!assessment && !isLoading && (
-                <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                    {documents.length === 0
-                        ? "Upload documents first, then run fraud analysis"
-                        : "Run fraud analysis to see per-node intelligence"}
+                <div style={{
+                    textAlign: "center", padding: "48px 20px", color: "#94a3b8",
+                    background: "#f8fafc", borderRadius: 14, border: "1px dashed #e2e8f0",
+                }}>
+                    <ShieldAlert size={32} color="#cbd5e1" style={{ marginBottom: 12 }} />
+                    <div style={{ fontSize: "0.9375rem", fontWeight: 600, color: "#64748b", marginBottom: 4 }}>
+                        {documents.length === 0 ? "Upload documents first" : "Ready to analyze"}
+                    </div>
+                    <div style={{ fontSize: "0.8125rem" }}>
+                        {documents.length === 0
+                            ? "Upload supporting documents, then run the fraud analysis engine"
+                            : "Click Analyze above to run the 6-layer fraud detection pipeline"}
+                    </div>
                 </div>
             )}
 
             {/* Loading skeleton */}
             {isLoading && !assessment && (
-                <div style={{ textAlign: "center", padding: "20px 0" }}>
-                    <div className="skeleton" style={{ height: 80, marginBottom: 12 }} />
+                <div style={{ padding: "16px 0" }}>
+                    <div className="skeleton" style={{ height: 100, borderRadius: 14, marginBottom: 16 }} />
                     {[...Array(6)].map((_, i) => (
-                        <div key={i} className="skeleton" style={{ height: 14, marginBottom: 10 }} />
+                        <div key={i} className="skeleton" style={{ height: 16, marginBottom: 12, borderRadius: 8 }} />
                     ))}
                 </div>
             )}
@@ -386,39 +421,48 @@ export function FraudAgentPanel({
             {/* Results */}
             {assessment && !analyzing && (
                 <>
-                    {/* Fraud score badge */}
-                    <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-                        <FraudScoreBadge score={assessment.fraud_score} label />
-                    </div>
-
-                    {/* Risk level */}
-                    {assessment.risk_level && (
-                        <div style={{ textAlign: "center", marginBottom: 14 }}>
-                            <span className={`pill ${riskLabel(assessment.risk_level).cls}`}>
-                                {riskLabel(assessment.risk_level).text}
-                            </span>
+                    {/* Score hero card */}
+                    <div style={{
+                        background: "#fff", border: "1px solid #e8ecf1", borderRadius: 14,
+                        padding: "24px", marginBottom: 20,
+                        display: "flex", alignItems: "center", gap: 24,
+                        boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+                    }}>
+                        <div style={{ flexShrink: 0 }}>
+                            <FraudScoreBadge score={assessment.fraud_score} label />
                         </div>
-                    )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            {assessment.risk_level && (
+                                <div style={{ marginBottom: 8 }}>
+                                    <span className={`pill ${riskLabel(assessment.risk_level).cls}`} style={{ fontSize: "0.75rem", padding: "4px 14px" }}>
+                                        {riskLabel(assessment.risk_level).text}
+                                    </span>
+                                </div>
+                            )}
+                            <div style={{ fontSize: "0.8125rem", color: "#64748b", lineHeight: 1.6 }}>
+                                Fraud probability score based on analysis across 6 independent detection nodes.
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Manual review banner */}
                     {manualReview && (
                         <div style={{
-                            background: "var(--amber-bg, rgba(234,179,8,0.06))",
-                            border: "1px solid var(--amber-border, rgba(234,179,8,0.25))",
-                            borderRadius: 8, padding: "12px 14px", marginBottom: 14,
+                            background: "rgba(234,179,8,0.05)",
+                            border: "1px solid rgba(234,179,8,0.22)",
+                            borderRadius: 12, padding: "16px 18px", marginBottom: 18,
                         }}>
                             <div style={{
-                                display: "flex", alignItems: "center", gap: 6, marginBottom: 6,
-                                fontSize: "0.6875rem", fontWeight: 700, color: "var(--amber)",
-                                textTransform: "uppercase", letterSpacing: "0.05em",
+                                display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+                                fontSize: "0.8125rem", fontWeight: 700, color: "#d97706",
                             }}>
-                                <AlertTriangle size={13} />
+                                <AlertTriangle size={15} />
                                 Manual Review Required
                             </div>
                             {triggers.length > 0 && (
                                 <ul style={{
-                                    margin: 0, padding: "0 0 0 16px",
-                                    fontSize: "0.75rem", color: "var(--text-secondary)", lineHeight: 1.7,
+                                    margin: 0, padding: "0 0 0 20px",
+                                    fontSize: "0.8125rem", color: "#475569", lineHeight: 1.8,
                                 }}>
                                     {triggers.map((t: string, i: number) => <li key={i}>{t}</li>)}
                                 </ul>
@@ -431,24 +475,23 @@ export function FraudAgentPanel({
                         <div style={{
                             background: "rgba(220,38,38,0.04)",
                             border: "1px solid rgba(220,38,38,0.15)",
-                            borderRadius: 8, padding: "12px 14px", marginBottom: 14,
+                            borderRadius: 12, padding: "16px 18px", marginBottom: 18,
                         }}>
                             <div style={{
-                                display: "flex", alignItems: "center", gap: 6, marginBottom: 6,
-                                fontSize: "0.6875rem", fontWeight: 700, color: "var(--crimson)",
-                                textTransform: "uppercase", letterSpacing: "0.05em",
+                                display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+                                fontSize: "0.8125rem", fontWeight: 700, color: "#dc2626",
                             }}>
-                                <XCircle size={13} />
+                                <XCircle size={15} />
                                 Critical Signals
                             </div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                                 {criticalSignals.map((s: string, i: number) => (
                                     <span key={i} style={{
-                                        fontFamily: "var(--font-mono)", fontSize: "0.6875rem",
+                                        fontFamily: "var(--font-mono)", fontSize: "0.75rem",
                                         background: "rgba(220,38,38,0.06)",
                                         border: "1px solid rgba(220,38,38,0.15)",
-                                        borderRadius: 3, padding: "2px 6px",
-                                        color: "var(--crimson)",
+                                        borderRadius: 6, padding: "4px 10px",
+                                        color: "#dc2626",
                                     }}>
                                         {s}
                                     </span>
@@ -457,21 +500,26 @@ export function FraudAgentPanel({
                         </div>
                     )}
 
-                    {/* Per-node breakdown */}
+                    {/* Per-node breakdown — expanded with more breathing room */}
                     {assessment.layer_scores && (
-                        <div style={{ marginBottom: 14 }}>
+                        <div style={{
+                            background: "#fff", border: "1px solid #e8ecf1", borderRadius: 14,
+                            padding: "20px 22px", marginBottom: 18,
+                            boxShadow: "0 1px 4px rgba(0,0,0,0.03)",
+                        }}>
                             <div style={{
-                                fontSize: "0.6875rem", color: "var(--text-muted)",
-                                textTransform: "uppercase", letterSpacing: "0.06em",
-                                marginBottom: 8, fontWeight: 600,
-                                display: "flex", alignItems: "center", gap: 6,
+                                fontSize: "0.8125rem", color: "#0f172a",
+                                marginBottom: 16, fontWeight: 700,
+                                display: "flex", alignItems: "center", gap: 8,
                             }}>
+                                <Activity size={14} color="#7c3aed" />
                                 Agent Node Breakdown
                                 <span style={{
-                                    fontFamily: "var(--font-mono)", fontSize: "0.5625rem",
-                                    color: "var(--text-muted)", opacity: 0.6,
+                                    fontFamily: "var(--font-mono)", fontSize: "0.625rem",
+                                    color: "#94a3b8", marginLeft: "auto",
+                                    background: "#f1f5f9", borderRadius: 10, padding: "2px 10px",
                                 }}>
-                                    (6 nodes)
+                                    6 nodes
                                 </span>
                             </div>
                             {NODE_ORDER.map((nodeName) => {
@@ -495,58 +543,54 @@ export function FraudAgentPanel({
                     {/* AI Risk Explanation */}
                     {assessment.explanation_text && (
                         <div style={{
-                            background: "var(--bg-surface)", border: "1px solid var(--border)",
-                            borderRadius: 6, padding: 14, marginBottom: 14,
+                            background: "linear-gradient(135deg, rgba(26,86,219,0.03), rgba(124,58,237,0.03))",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: 12, padding: "18px 20px", marginBottom: 18,
                         }}>
                             <div style={{
-                                fontSize: "0.6875rem", color: "var(--text-muted)",
-                                textTransform: "uppercase", letterSpacing: "0.06em",
-                                marginBottom: 8, fontWeight: 600,
-                                display: "flex", alignItems: "center", gap: 6,
+                                fontSize: "0.8125rem", color: "#0f172a",
+                                marginBottom: 10, fontWeight: 700,
+                                display: "flex", alignItems: "center", gap: 8,
                             }}>
-                                <Brain size={12} />
+                                <Brain size={14} color="#1a56db" />
                                 AI Risk Explanation
                             </div>
                             <p style={{
-                                fontSize: "0.8125rem", color: "var(--text-secondary)",
-                                lineHeight: 1.7, margin: 0, whiteSpace: "pre-wrap",
+                                fontSize: "0.875rem", color: "#475569",
+                                lineHeight: 1.75, margin: 0, whiteSpace: "pre-wrap",
                             }}>
                                 {assessment.explanation_text}
                             </p>
                         </div>
                     )}
 
-                    {/* Analyzed document info */}
-                    {analyzedDoc && (
-                        <div style={{
-                            fontSize: "0.6875rem", color: "var(--text-muted)",
-                            fontFamily: "var(--font-mono)", display: "flex", alignItems: "center", gap: 4,
-                            marginBottom: 6,
-                        }}>
-                            <FileText size={10} />
-                            Analyzed: {analyzedDoc.document_type.replace(/_/g, " ")}
-                            {analyzedDoc.original_filename && ` (${analyzedDoc.original_filename})`}
-                        </div>
-                    )}
-
-                    {/* Meta */}
+                    {/* Footer meta */}
                     <div style={{
-                        fontSize: "0.6875rem", color: "var(--text-muted)",
-                        fontFamily: "var(--font-mono)", display: "flex", flexDirection: "column",
-                        gap: 3, borderTop: "1px solid var(--border)", paddingTop: 10,
+                        display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center",
+                        padding: "14px 0", borderTop: "1px solid #e8ecf1",
+                        fontSize: "0.75rem", color: "#94a3b8", fontFamily: "var(--font-mono)",
                     }}>
+                        {analyzedDoc && (
+                            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                <FileText size={11} />
+                                {analyzedDoc.document_type.replace(/_/g, " ")}
+                                {analyzedDoc.original_filename && ` (${analyzedDoc.original_filename})`}
+                            </span>
+                        )}
                         {assessment.config_version && (
-                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                <CheckCircle size={10} color="var(--green)" />
-                                Engine: {assessment.config_version}
+                            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                <CheckCircle size={11} color="#16a34a" />
+                                {assessment.config_version}
                             </span>
                         )}
                         {assessment.ai_degraded_mode && (
-                            <span style={{ color: "var(--amber)" }}>
-                                <AlertTriangle size={10} /> AI degraded mode
+                            <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#d97706" }}>
+                                <AlertTriangle size={11} /> Degraded
                             </span>
                         )}
-                        <span>Assessed: {formatDateTime(assessment.created_at)}</span>
+                        <span style={{ marginLeft: "auto" }}>
+                            {formatDateTime(assessment.created_at)}
+                        </span>
                     </div>
                 </>
             )}

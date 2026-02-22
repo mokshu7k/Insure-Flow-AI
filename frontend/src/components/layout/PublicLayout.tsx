@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
+import { Shield } from "lucide-react";
 
 /**
  * Shared top nav for all public-facing pages (homepage, login, register).
@@ -9,38 +9,39 @@ export function Navbar() {
     return (
         <nav style={{
             position: "sticky", top: 0, zIndex: 50,
-            background: "rgba(13,14,17,0.92)", backdropFilter: "blur(12px)",
+            background: "rgba(255,255,255,0.92)", backdropFilter: "blur(12px)",
             borderBottom: "1px solid var(--border)",
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "0 32px", height: 52,
+            padding: "0 32px", height: 60,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
         }}>
             {/* Logo */}
-            <Link href="/" style={{ display: "flex", alignItems: "center", gap: 8, textDecoration: "none" }}>
-                <AlertTriangle size={16} color="var(--amber)" />
-                <span style={{ fontWeight: 700, fontSize: "0.9375rem", color: "var(--text-primary)" }}>InsureFlow</span>
-                <span style={{
-                    fontFamily: "var(--font-mono)", fontSize: "0.5625rem",
-                    color: "var(--text-muted)", background: "var(--bg-surface)",
-                    border: "1px solid var(--border)", borderRadius: 3,
-                    padding: "2px 5px", letterSpacing: "0.06em", textTransform: "uppercase",
+            <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+                <div style={{
+                    width: 30, height: 30, borderRadius: 8,
+                    background: "var(--brand)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                    CLAIM INTEL
-                </span>
+                    <Shield size={15} color="white" />
+                </div>
+                <span style={{ fontWeight: 800, fontSize: "1rem", color: "var(--text-primary)" }}>InsureFlow</span>
             </Link>
 
             {/* Actions */}
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Link href="/login" style={{
-                    padding: "5px 14px", fontSize: "0.8125rem",
+                    padding: "7px 16px", fontSize: "0.8125rem",
                     color: "var(--text-secondary)", textDecoration: "none",
-                    border: "1px solid var(--border)", borderRadius: 4,
+                    border: "1px solid var(--border)", borderRadius: 8,
+                    fontWeight: 500,
                 }}>
                     Sign in
                 </Link>
                 <Link href="/register" style={{
-                    padding: "5px 16px", fontSize: "0.8125rem",
-                    background: "var(--blue)", color: "#fff", textDecoration: "none",
-                    borderRadius: 4, fontWeight: 500,
+                    padding: "7px 18px", fontSize: "0.8125rem",
+                    background: "var(--brand)", color: "#fff", textDecoration: "none",
+                    borderRadius: 8, fontWeight: 600,
+                    boxShadow: "0 1px 3px rgba(26,86,219,0.3)",
                 }}>
                     Get started
                 </Link>
@@ -53,9 +54,15 @@ export function Navbar() {
 export function LogoMark({ subtitle }: { subtitle?: string }) {
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
-            <AlertTriangle size={18} color="var(--amber)" />
+            <div style={{
+                width: 34, height: 34, borderRadius: 8,
+                background: "var(--brand)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+                <Shield size={17} color="white" />
+            </div>
             <div>
-                <div style={{ fontWeight: 700, fontSize: "0.9375rem", letterSpacing: "0.01em" }}>InsureFlow</div>
+                <div style={{ fontWeight: 800, fontSize: "1rem", letterSpacing: "0.01em" }}>InsureFlow</div>
                 <div style={{
                     fontSize: "0.625rem", color: "var(--text-muted)",
                     fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.08em",

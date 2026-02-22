@@ -15,6 +15,7 @@ export function CommandLayout({ children, rightPanel, header }: CommandLayoutPro
             gridTemplateRows: header ? "var(--header-height) 1fr" : "1fr",
             height: "100vh",
             overflow: "hidden",
+            background: "var(--bg-base)",
         }}>
             <LeftRail />
 
@@ -26,9 +27,10 @@ export function CommandLayout({ children, rightPanel, header }: CommandLayoutPro
                     background: "var(--bg-panel)",
                     display: "flex",
                     alignItems: "center",
-                    padding: "0 20px",
+                    padding: "0 24px",
                     gap: 12,
                     zIndex: 5,
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
                 }}>
                     {header}
                 </div>

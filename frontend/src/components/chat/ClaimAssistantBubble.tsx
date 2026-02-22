@@ -62,7 +62,7 @@ export function ClaimAssistantBubble() {
                     position: "fixed", bottom: 76, right: 20, zIndex: 1000,
                     width: 380, height: 520,
                     background: "var(--bg-panel)", border: "1px solid var(--border)",
-                    borderRadius: 12, boxShadow: "0 12px 40px rgba(0,0,0,0.45)",
+                    borderRadius: 14, boxShadow: "0 12px 40px rgba(0,0,0,0.12)",
                     display: "flex", flexDirection: "column", overflow: "hidden",
                 }}>
                     {/* Header */}
@@ -203,7 +203,7 @@ export function ClaimAssistantBubble() {
                     width: 48, height: 48, borderRadius: "50%",
                     background: open ? "var(--bg-surface)" : "var(--blue)",
                     border: open ? "1px solid var(--border)" : "none",
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
                     cursor: "pointer",
                     display: "flex", alignItems: "center", justifyContent: "center",
                     transition: "all 200ms",

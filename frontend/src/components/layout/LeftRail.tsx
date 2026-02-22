@@ -8,15 +8,30 @@ import {
     MessageSquare, QrCode, PanelLeftClose, PanelLeftOpen
 } from "lucide-react";
 
-const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, alwaysShow: true },
-    { href: "/claims", label: "Claims", icon: FileText, alwaysShow: true },
-    { href: "/cashless", label: "Cashless", icon: QrCode, alwaysShow: true },
-    { href: "/chat", label: "Assistant", icon: MessageSquare, alwaysShow: true },
-    { href: "/adjuster", label: "Adjuster", icon: Scale, adminOnly: true },
-    { href: "/audit", label: "Audit", icon: ShieldAlert, auditorRole: true },
-    { href: "/compliance", label: "Compliance", icon: Shield, complianceRole: true },
-    { href: "/profile", label: "Profile", icon: User, alwaysShow: true },
+const NAV_SECTIONS = [
+    {
+        title: "MENU",
+        items: [
+            { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, alwaysShow: true },
+            { href: "/claims", label: "Claims", icon: FileText, alwaysShow: true },
+            { href: "/cashless", label: "Cashless", icon: QrCode, alwaysShow: true },
+            { href: "/chat", label: "Assistant", icon: MessageSquare, alwaysShow: true },
+        ],
+    },
+    {
+        title: "MANAGEMENT",
+        items: [
+            { href: "/adjuster", label: "Adjuster", icon: Scale, adminOnly: true },
+            { href: "/audit", label: "Audit", icon: ShieldAlert, auditorRole: true },
+            { href: "/compliance", label: "Compliance", icon: Shield, complianceRole: true },
+        ],
+    },
+    {
+        title: "ACCOUNT",
+        items: [
+            { href: "/profile", label: "Profile", icon: User, alwaysShow: true },
+        ],
+    },
 ];
 
 export function LeftRail() {
@@ -27,34 +42,47 @@ export function LeftRail() {
     const isAuditor = user?.role === "AUDITOR";
     const [collapsed, setCollapsed] = useState(false);
 
-    const visible = navItems.filter((i) => i.alwaysShow || (i.adminOnly && isAdmin) || (i.auditorRole && isAuditor) || (i.complianceRole && (isAdmin || isAuditor)));
+    const railWidth = collapsed ? 64 : 252;
 
-    const railWidth = collapsed ? 56 : 220;
+    function isVisible(item: { alwaysShow?: boolean; adminOnly?: boolean; auditorRole?: boolean; complianceRole?: boolean }) {
+        return item.alwaysShow || (item.adminOnly && (isAdmin || isAdjuster)) || (item.auditorRole && isAuditor) || (item.complianceRole && (isAdmin || isAuditor));
+    }
 
     return (
         <aside style={{
             gridRow: "1 / -1",
             width: railWidth,
             minWidth: railWidth,
-            background: "var(--bg-panel)",
-            borderRight: "1px solid var(--border)",
+            background: "#ffffff",
+            borderRight: "1px solid #e8ecf1",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
-            transition: "width 200ms ease, min-width 200ms ease",
+            transition: "width 250ms cubic-bezier(0.4, 0, 0.2, 1), min-width 250ms cubic-bezier(0.4, 0, 0.2, 1)",
         }}>
             {/* Logo + collapse toggle */}
             <div style={{
-                padding: collapsed ? "16px 8px" : "16px 18px",
-                borderBottom: "1px solid var(--border)",
+                padding: collapsed ? "18px 8px" : "18px 20px",
+                borderBottom: "1px solid #e8ecf1",
                 display: "flex", alignItems: "center",
                 justifyContent: collapsed ? "center" : "flex-start",
-                gap: 8,
+                gap: 10,
+                minHeight: 60,
             }}>
                 {!collapsed && (
                     <>
-                        <AlertTriangle size={16} color="var(--amber)" />
-                        <span style={{ fontWeight: 700, fontSize: "0.875rem", letterSpacing: "0.02em", flex: 1 }}>InsureFlow</span>
+                        <div style={{
+                            width: 34, height: 34, borderRadius: 10,
+                            background: "linear-gradient(135deg, #1a56db, #3b82f6)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            flexShrink: 0,
+                            boxShadow: "0 2px 8px rgba(26,86,219,0.25)",
+                        }}>
+                            <Shield size={17} color="white" />
+                        </div>
+                        <span style={{ fontWeight: 800, fontSize: "1.0625rem", letterSpacing: "-0.02em", flex: 1, color: "#0f172a" }}>
+                            InsureFlow
+                        </span>
                     </>
                 )}
                 <button
@@ -62,67 +90,111 @@ export function LeftRail() {
                     title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
                     style={{
                         background: "none", border: "none", cursor: "pointer",
-                        color: "var(--text-muted)", padding: 4, borderRadius: 4,
+                        color: "#94a3b8", padding: 4, borderRadius: 6,
                         display: "flex", alignItems: "center", justifyContent: "center",
                         transition: "color 150ms",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-muted)")}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "#334155")}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = "#94a3b8")}
                 >
                     {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
                 </button>
             </div>
 
-            {/* Nav */}
-            <nav style={{ flex: 1, padding: "8px 0", overflowY: "auto" }}>
-                {visible.map(({ href, label, icon: Icon }) => {
-                    const active = pathname === href || pathname.startsWith(href + "/");
+            {/* Nav — grouped sections */}
+            <nav style={{ flex: 1, padding: "8px 10px", overflowY: "auto" }}>
+                {NAV_SECTIONS.map((section) => {
+                    const visibleItems = section.items.filter(isVisible);
+                    if (visibleItems.length === 0) return null;
                     return (
-                        <Link key={href} href={href} title={collapsed ? label : undefined} style={{
-                            display: "flex", alignItems: "center", gap: 10,
-                            padding: collapsed ? "10px 0" : "8px 18px",
-                            justifyContent: collapsed ? "center" : "flex-start",
-                            fontSize: "0.8125rem", fontWeight: active ? 500 : 400,
-                            color: active ? "var(--text-primary)" : "var(--text-secondary)",
-                            background: active ? "var(--bg-surface)" : "transparent",
-                            borderLeft: active ? "2px solid var(--blue)" : "2px solid transparent",
-                            textDecoration: "none",
-                            transition: "all 150ms",
-                        }}>
-                            <Icon size={16} />
-                            {!collapsed && label}
-                        </Link>
+                        <div key={section.title} style={{ marginBottom: 8 }}>
+                            {!collapsed && (
+                                <div style={{
+                                    fontSize: "0.625rem", fontWeight: 700,
+                                    color: "#94a3b8", textTransform: "uppercase",
+                                    letterSpacing: "0.08em", padding: "10px 12px 5px",
+                                }}>
+                                    {section.title}
+                                </div>
+                            )}
+                            {visibleItems.map(({ href, label, icon: Icon }) => {
+                                const active = pathname === href || pathname.startsWith(href + "/");
+                                return (
+                                    <Link key={href} href={href} title={collapsed ? label : undefined} style={{
+                                        display: "flex", alignItems: "center", gap: 11,
+                                        padding: collapsed ? "10px 0" : "9px 12px",
+                                        justifyContent: collapsed ? "center" : "flex-start",
+                                        fontSize: "0.8125rem", fontWeight: active ? 600 : 400,
+                                        color: active ? "#1a56db" : "#64748b",
+                                        background: active ? "rgba(26,86,219,0.06)" : "transparent",
+                                        borderRadius: 8,
+                                        textDecoration: "none",
+                                        transition: "all 150ms",
+                                        marginBottom: 1,
+                                        borderLeft: active ? "3px solid #1a56db" : "3px solid transparent",
+                                    }}
+                                    onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "#f1f5f9"; e.currentTarget.style.color = "#334155"; } }}
+                                    onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748b"; } }}
+                                    >
+                                        <Icon size={17} style={{ flexShrink: 0 }} />
+                                        {!collapsed && label}
+                                    </Link>
+                                );
+                            })}
+                        </div>
                     );
                 })}
             </nav>
 
             {/* User Footer */}
             {user && (
-                <div style={{ borderTop: "1px solid var(--border)", padding: collapsed ? "12px 8px" : "12px 18px" }}>
+                <div style={{ borderTop: "1px solid #e8ecf1", padding: collapsed ? "14px 8px" : "14px 16px" }}>
                     {!collapsed && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                             <div style={{
-                                width: 28, height: 28, borderRadius: "50%",
-                                background: "var(--blue-bg)", border: "1px solid var(--blue-border)",
+                                width: 34, height: 34, borderRadius: "50%",
+                                background: "linear-gradient(135deg, #e0e7ff, #c7d2fe)",
+                                border: "2px solid #e8ecf1",
                                 display: "flex", alignItems: "center", justifyContent: "center",
                                 flexShrink: 0,
                             }}>
-                                <User size={13} color="var(--blue)" />
+                                <User size={14} color="#4f46e5" />
                             </div>
-                            <div style={{ minWidth: 0 }}>
-                                <div style={{ fontSize: "0.75rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                    {user.email}
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{
+                                    fontSize: "0.8125rem", fontWeight: 600,
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                    color: "#0f172a",
+                                }}>
+                                    {user.email?.split("@")[0]}
                                 </div>
-                                <div style={{ fontSize: "0.625rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                    {user.role}
+                                <div style={{
+                                    fontSize: "0.625rem", color: "#94a3b8",
+                                    fontFamily: "var(--font-mono)",
+                                    textTransform: "uppercase", letterSpacing: "0.06em",
+                                }}>
+                                    {user.role?.replace(/_/g, " ")}
                                 </div>
                             </div>
                         </div>
                     )}
-                    <button onClick={logout} className="btn btn-ghost" title={collapsed ? "Sign out" : undefined} style={{
-                        width: "100%", padding: collapsed ? "6px 0" : "5px 10px",
+                    <button onClick={logout} title={collapsed ? "Sign out" : undefined} style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        width: "100%", padding: collapsed ? "8px 0" : "8px 12px",
                         justifyContent: "center",
-                    }}>
+                        background: "#f8fafc",
+                        border: "1px solid #e8ecf1",
+                        borderRadius: 8,
+                        color: "#64748b",
+                        fontSize: "0.8125rem",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        transition: "all 150ms",
+                        fontFamily: "var(--font-sans)",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "#f1f5f9"; e.currentTarget.style.color = "#dc2626"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.color = "#64748b"; }}
+                    >
                         <LogOut size={14} />
                         {!collapsed && "Sign out"}
                     </button>

@@ -327,6 +327,7 @@ function RunDetail({ runId, onBack }: { runId: string; onBack: () => void }) {
                 {run && (
                     <>
                         <MonoValue value={run.run_id} size="0.8rem" />
+                        <MonoValue value={run.run_id} size="0.8rem" />
                         <StatusBadge status={run.status} />
                         <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
                             {formatDT(run.started_at)} · {duration(run.started_at, run.completed_at)}
