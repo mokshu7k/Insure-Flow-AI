@@ -59,4 +59,4 @@ def require_any_role(roles: list[str]) -> Callable:  # type: ignore[no-redef]
     def _as_dep(current_user: User = Depends(get_current_user)) -> User:  # noqa: B008
         return _check(current_user)
     _check.as_dep = _as_dep  # type: ignore[attr-defined]
-    return _check
+    return _as_dep

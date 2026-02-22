@@ -1,11 +1,151 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { CommandLayout } from "@/components/layout/CommandLayout";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { MonoValue } from "@/components/ui";
+import { useAuthStore } from "@/store/authStore";
 import { auditService } from "@/services/auditService";
 import type { AuditRun, AuditFinding, AuditRunDetail } from "@/types";
-import { ShieldAlert, Play, RefreshCw, ChevronDown, ChevronRight, AlertTriangle, AlertCircle, Info, Minus } from "lucide-react";
+import { ShieldAlert, Play, RefreshCw, ChevronDown, ChevronRight, AlertTriangle, AlertCircle, Info, Minus, Database, Brain, Save, CheckCircle2 } from "lucide-react";
+
+// ── Sweep progress panel ──────────────────────────────────────────────────
+
+const PHASES = [
+    { key: "collect",  label: "Collecting DB signals",       desc: "Querying adjuster activity, settlement patterns, fraud scores & provider clusters", icon: Database,      durationMs: 10000 },
+    { key: "analyze",  label: "Analysing with Gemini AI",    desc: "Gemini reasoning over 10 signal streams to classify suspicious patterns",         icon: Brain,         durationMs: 18000 },
+    { key: "persist",  label: "Persisting findings",         desc: "Writing immutable AuditRun + AuditFinding rows to the database",                  icon: Save,          durationMs: 5000  },
+    { key: "done",     label: "Sweep complete",              desc: "",                                                                                  icon: CheckCircle2,  durationMs: 0     },
+] as const;
+
+function SweepProgressPanel({ runId, startedAt, completedRun, onDismiss }: {
+    runId: string;
+    startedAt: number;
+    completedRun: AuditRun | null;
+    onDismiss: () => void;
+}) {
+    const [elapsed, setElapsed] = useState(0);
+    useEffect(() => {
+        if (completedRun) return;
+        const id = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 500);
+        return () => clearInterval(id);
+    }, [startedAt, completedRun]);
+
+    // Simple elapsed-based phase detection
+    const elapsedMs = elapsed * 1000;
+    const phaseIdx = completedRun ? 3
+        : elapsedMs < 10000 ? 0
+        : elapsedMs < 28000 ? 1
+        : 2;
+
+    const isDone = !!completedRun;
+    const totalFindings = completedRun?.total_findings ?? 0;
+
+    return (
+        <div style={{
+            margin: "0 0 20px 0",
+            border: `1px solid ${isDone ? "var(--green, #22c55e)" : "var(--blue, #3b82f6)"}44`,
+            borderRadius: 10,
+            background: isDone ? "rgba(34,197,94,0.04)" : "rgba(59,130,246,0.04)",
+            overflow: "hidden",
+        }}>
+            {/* Header bar */}
+            <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "12px 18px",
+                borderBottom: `1px solid ${isDone ? "var(--green, #22c55e)" : "var(--blue, #3b82f6)"}22`,
+                background: isDone ? "rgba(34,197,94,0.06)" : "rgba(59,130,246,0.06)",
+            }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {isDone
+                        ? <CheckCircle2 size={15} color="var(--green, #22c55e)" />
+                        : <RefreshCw size={15} color="var(--blue, #3b82f6)" style={{ animation: "spin 1.2s linear infinite" }} />
+                    }
+                    <span style={{ fontWeight: 600, fontSize: "0.85rem", color: isDone ? "var(--green, #22c55e)" : "var(--blue, #3b82f6)" }}>
+                        {isDone ? "Sweep Complete" : "Sweep Running"}
+                    </span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--text-muted)" }}>{runId}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {!isDone && (
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            {elapsed}s elapsed
+                        </span>
+                    )}
+                    {isDone && (
+                        <button onClick={onDismiss} style={{
+                            background: "none", border: "1px solid var(--border)", borderRadius: 4,
+                            padding: "3px 10px", cursor: "pointer", fontSize: "0.75rem", color: "var(--text-muted)"
+                        }}>Dismiss</button>
+                    )}
+                </div>
+            </div>
+
+            {/* Phase steps */}
+            <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+                {PHASES.slice(0, 3).map((phase, i) => {
+                    const Icon = phase.icon;
+                    const state = isDone ? "done" : i < phaseIdx ? "done" : i === phaseIdx ? "active" : "pending";
+                    const color = state === "done" ? "var(--green, #22c55e)"
+                        : state === "active" ? "var(--blue, #3b82f6)"
+                        : "var(--text-muted)";
+                    return (
+                        <div key={phase.key} style={{ display: "flex", alignItems: "flex-start", gap: 12, opacity: state === "pending" ? 0.4 : 1, transition: "opacity 400ms" }}>
+                            <div style={{
+                                width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                background: `${color}18`, border: `1px solid ${color}44`,
+                            }}>
+                                {state === "active"
+                                    ? <RefreshCw size={14} color={color} style={{ animation: "spin 1.2s linear infinite" }} />
+                                    : state === "done"
+                                    ? <CheckCircle2 size={14} color={color} />
+                                    : <Icon size={14} color={color} />
+                                }
+                            </div>
+                            <div style={{ paddingTop: 2 }}>
+                                <div style={{ fontSize: "0.8rem", fontWeight: 600, color }}>{phase.label}</div>
+                                {state !== "pending" && (
+                                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 2 }}>{phase.desc}</div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Result summary when done */}
+            {isDone && completedRun && (
+                <div style={{
+                    margin: "0 18px 18px",
+                    background: "var(--bg-surface)", border: "1px solid var(--border)",
+                    borderRadius: 8, padding: "14px 16px",
+                }}>
+                    <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 10 }}>Sweep Results</div>
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: completedRun.summary_narrative ? 12 : 0 }}>
+                        {[
+                            { label: "Total Findings", value: totalFindings,                   color: totalFindings > 0 ? "var(--amber)" : "var(--green, #22c55e)" },
+                            { label: "Critical",       value: completedRun.critical_count,     color: "var(--crimson)" },
+                            { label: "High",           value: completedRun.high_count,         color: "var(--amber)" },
+                            { label: "Medium",         value: completedRun.medium_count,       color: "var(--blue, #3b82f6)" },
+                            { label: "Low",            value: completedRun.low_count,          color: "var(--text-muted)" },
+                        ].map(({ label, value, color }) => (
+                            <div key={label} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                                <span style={{ fontFamily: "var(--font-mono)", fontSize: "1.2rem", fontWeight: 700, color }}>{value}</span>
+                                <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+                            </div>
+                        ))}
+                    </div>
+                    {completedRun.summary_narrative && (
+                        <p style={{ fontSize: "0.78rem", color: "var(--text-primary)", lineHeight: 1.6, margin: 0 }}>
+                            {completedRun.summary_narrative}
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -106,7 +246,7 @@ function FindingRow({ f }: { f: AuditFinding }) {
                         {f.entity_type}
                     </span>
                 </td>
-                <td><MonoValue style={{ fontSize: "0.7rem" }}>{f.entity_id.slice(0, 16)}…</MonoValue></td>
+                <td><span className="mono" style={{ fontSize: "0.7rem" }}>{f.entity_id.slice(0, 16)}…</span></td>
                 <td style={{ fontSize: "0.75rem", color: "var(--text-secondary)", maxWidth: 300 }}>
                     {f.description}
                 </td>
@@ -131,7 +271,7 @@ function FindingRow({ f }: { f: AuditFinding }) {
                                 <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 8 }}>
                                     <strong>Supporting entities: </strong>
                                     {f.supporting_entity_ids.map((id) => (
-                                        <MonoValue key={id} style={{ fontSize: "0.7rem", marginRight: 6 }}>{id}</MonoValue>
+                                        <span key={id} className="mono" style={{ fontSize: "0.7rem", marginRight: 6 }}>{id}</span>
                                     ))}
                                 </p>
                             )}
@@ -186,7 +326,7 @@ function RunDetail({ runId, onBack }: { runId: string; onBack: () => void }) {
                 </button>
                 {run && (
                     <>
-                        <MonoValue style={{ fontSize: "0.8rem" }}>{run.run_id}</MonoValue>
+                        <MonoValue value={run.run_id} size="0.8rem" />
                         <StatusBadge status={run.status} />
                         <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
                             {formatDT(run.started_at)} · {duration(run.started_at, run.completed_at)}
@@ -267,12 +407,27 @@ function RunDetail({ runId, onBack }: { runId: string; onBack: () => void }) {
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default function AuditPage() {
+    const router = useRouter();
+    const user = useAuthStore((s) => s.user);
+    const _hasHydrated = useAuthStore((s) => s._hasHydrated);
+
+    // AUDITOR-only — redirect anyone else away immediately
+    useEffect(() => {
+        if (!_hasHydrated) return;
+        if (user && user.role !== "AUDITOR") {
+            router.replace("/claims");
+        }
+    }, [_hasHydrated, user, router]);
+
     const [runs, setRuns] = useState<AuditRun[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [triggering, setTriggering] = useState(false);
     const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
     const [triggerMsg, setTriggerMsg] = useState<string | null>(null);
+    const [activeSweep, setActiveSweep] = useState<{ runId: string; startedAt: number } | null>(null);
+    const [completedRun, setCompletedRun] = useState<AuditRun | null>(null);
+    const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const load = useCallback(() => {
         setLoading(true);
@@ -287,13 +442,35 @@ export default function AuditPage() {
     const trigger = async () => {
         setTriggering(true);
         setTriggerMsg(null);
+        setCompletedRun(null);
         try {
             const res = await auditService.triggerSweep();
-            setTriggerMsg(`Sweep started: ${res.run_id}`);
-            // Poll after 3s for the new run to appear
-            setTimeout(load, 3000);
+            const startedAt = Date.now();
+            setActiveSweep({ runId: res.run_id, startedAt });
+            // Poll every 5s up to 10 times (50s total) until the run appears/completes
+            let attempts = 0;
+            const poll = () => {
+                attempts++;
+                auditService.listRuns(1, 50)
+                    .then((r) => {
+                        setRuns(r.items);
+                        setTotal(r.total);
+                        const thisRun = r.items.find((x) => x.run_id === res.run_id);
+                        if (thisRun && thisRun.status !== "RUNNING") {
+                            setCompletedRun(thisRun);
+                            setTriggerMsg(null);
+                        } else if (attempts < 10) {
+                            pollRef.current = setTimeout(poll, 5000);
+                        } else {
+                            setTriggerMsg(`Sweep running in background — refresh to see results.`);
+                        }
+                    })
+                    .catch(() => { if (attempts < 10) pollRef.current = setTimeout(poll, 5000); });
+            };
+            pollRef.current = setTimeout(poll, 5000);
         } catch {
-            setTriggerMsg("Failed to start sweep.");
+            setTriggerMsg("Failed to start sweep — check you are logged in as AUDITOR.");
+            setActiveSweep(null);
         } finally {
             setTriggering(false);
         }
@@ -301,7 +478,7 @@ export default function AuditPage() {
 
     if (selectedRunId) {
         return (
-            <AuthGuard requireAdmin>
+            <AuthGuard>
                 <CommandLayout header={
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <ShieldAlert size={15} color="var(--text-muted)" />
@@ -315,7 +492,7 @@ export default function AuditPage() {
     }
 
     return (
-        <AuthGuard requireAdmin>
+        <AuthGuard>
             <CommandLayout header={
                 <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
                     <ShieldAlert size={15} color="var(--text-muted)" />
@@ -367,57 +544,69 @@ export default function AuditPage() {
                             ))}
                         </tbody>
                     </table>
-                ) : runs.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "60px 0" }}>
-                        <ShieldAlert size={32} color="var(--text-muted)" style={{ marginBottom: 12 }} />
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No audit sweeps yet.</p>
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
-                            Click <strong>Run Audit Sweep</strong> to start the first one.
-                        </p>
-                    </div>
                 ) : (
-                    <div style={{ overflowX: "auto" }}>
-                        <table className="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Run ID</th>
-                                    <th>Status</th>
-                                    <th>Started</th>
-                                    <th>Duration</th>
-                                    <th>Findings</th>
-                                    <th>Summary</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {runs.map((run) => (
-                                    <tr
-                                        key={run.id}
-                                        style={{ cursor: "pointer" }}
-                                        onClick={() => setSelectedRunId(run.id)}
-                                    >
-                                        <td>
-                                            <MonoValue style={{ fontSize: "0.75rem" }}>{run.run_id}</MonoValue>
-                                        </td>
-                                        <td><StatusBadge status={run.status} /></td>
-                                        <td style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-                                            {formatDT(run.started_at)}
-                                        </td>
-                                        <td>
-                                            <MonoValue style={{ fontSize: "0.75rem" }}>
-                                                {duration(run.started_at, run.completed_at)}
-                                            </MonoValue>
-                                        </td>
-                                        <td><FindingCountPills run={run} /></td>
-                                        <td style={{ fontSize: "0.75rem", color: "var(--text-muted)",
-                                            maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap" }}>
-                                            {run.summary_narrative ?? "—"}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    <>
+                        {/* Live sweep panel */}
+                        {activeSweep && (
+                            <SweepProgressPanel
+                                runId={activeSweep.runId}
+                                startedAt={activeSweep.startedAt}
+                                completedRun={completedRun}
+                                onDismiss={() => { setActiveSweep(null); setCompletedRun(null); }}
+                            />
+                        )}
+
+                        {runs.length === 0 && !activeSweep ? (
+                            <div style={{ textAlign: "center", padding: "60px 0" }}>
+                                <ShieldAlert size={32} color="var(--text-muted)" style={{ marginBottom: 12 }} />
+                                <p style={{ color: "var(--text-muted)", fontSize: "0.9rem" }}>No audit sweeps yet.</p>
+                                <p style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: 4 }}>
+                                    Click <strong>Run Audit Sweep</strong> to start the first one.
+                                </p>
+                            </div>
+                        ) : runs.length > 0 ? (
+                            <div style={{ overflowX: "auto" }}>
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Run ID</th>
+                                            <th>Status</th>
+                                            <th>Started</th>
+                                            <th>Duration</th>
+                                            <th>Findings</th>
+                                            <th>Summary</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {runs.map((run) => (
+                                            <tr
+                                                key={run.id}
+                                                style={{ cursor: "pointer" }}
+                                                onClick={() => setSelectedRunId(run.id)}
+                                            >
+                                                <td>
+                                                    <MonoValue value={run.run_id} size="0.75rem" />
+                                                </td>
+                                                <td><StatusBadge status={run.status} /></td>
+                                                <td style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                                                    {formatDT(run.started_at)}
+                                                </td>
+                                                <td>
+                                                    <MonoValue value={duration(run.started_at, run.completed_at)} size="0.75rem" />
+                                                </td>
+                                                <td><FindingCountPills run={run} /></td>
+                                                <td style={{ fontSize: "0.75rem", color: "var(--text-muted)",
+                                                    maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap" }}>
+                                                    {run.summary_narrative ?? "—"}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : null}
+                    </>
                 )}
             </CommandLayout>
         </AuthGuard>

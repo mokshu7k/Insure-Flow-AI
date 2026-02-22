@@ -19,7 +19,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.core.rbac import require_any_role, require_role
+from app.core.rbac import require_role
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.audit_finding import (
@@ -36,10 +36,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/audit", tags=["audit"])
 
 
-@router.post("/trigger", status_code=202)
+@router.post("/trigger", status_code=202, response_model=None)
 async def trigger_audit_sweep(
     background_tasks: BackgroundTasks,
-    _: User = Depends(require_any_role(["AUDITOR", "INSURER_ADMIN"])),
+    _: User = Depends(require_role("AUDITOR")),
 ):
     """Kick off a new audit sweep in the background. Returns run_id immediately."""
     from datetime import datetime, timezone

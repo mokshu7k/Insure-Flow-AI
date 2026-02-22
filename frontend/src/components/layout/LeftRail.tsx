@@ -27,7 +27,7 @@ export function LeftRail() {
     const isAuditor = user?.role === "AUDITOR";
     const [collapsed, setCollapsed] = useState(false);
 
-    const visible = navItems.filter((i) => i.alwaysShow || (i.adminOnly && isAdmin) || (i.auditorRole && (isAdmin || isAuditor)) || (i.complianceRole && (isAdmin || isAuditor)));
+    const visible = navItems.filter((i) => i.alwaysShow || (i.adminOnly && isAdmin) || (i.auditorRole && isAuditor) || (i.complianceRole && (isAdmin || isAuditor)));
 
     const railWidth = collapsed ? 56 : 220;
 

@@ -40,7 +40,16 @@ pdf2image
 google-cloud-speech
 google-cloud-texttospeech
 
-# Fraud ML (scikit-learn only — no torch, no tensorflow)
+# Fraud Detection Agent (forensic image analysis + ML scoring)
+# Image forensics: metadata, ELA, copy-move detection, perceptual hashing
+exifread
+imagehash
+opencv-python
+scikit-image
+pytesseract
+# Fuzzy matching for name/entity reconciliation
+thefuzz
+# ML scoring
 scikit-learn
 numpy
 joblib
