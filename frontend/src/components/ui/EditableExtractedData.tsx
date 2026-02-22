@@ -8,6 +8,7 @@ interface EditableExtractedDataProps {
   document: ClaimDocumentResponse;
   onUpdate: (doc: ClaimDocumentResponse) => void;
   onError: (error: string) => void;
+  readOnly?: boolean;
 }
 
 /**
@@ -38,7 +39,7 @@ function isLocked(key: string): boolean {
   return LOCKED_FIELD_PATTERNS.some((re) => re.test(k));
 }
 
-export function EditableExtractedData({ document, onUpdate, onError }: EditableExtractedDataProps) {
+export function EditableExtractedData({ document, onUpdate, onError, readOnly = false }: EditableExtractedDataProps) {
   const normalize = (data: Record<string, unknown>) =>
     Object.fromEntries(
       Object.entries(data).map(([k, v]) => [
@@ -242,21 +243,61 @@ export function EditableExtractedData({ document, onUpdate, onError }: EditableE
             No data extracted — add fields manually.
           </p>
         )}
-        <button
-          className="btn btn-ghost"
-          onClick={() => setIsEditing(true)}
-          style={{ fontSize: "0.6875rem", padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}
-        >
-          <Edit2 size={12} />
-          {rawEntries.length > 0 ? "Edit extracted data" : "Add data manually"}
-        </button>
+        {!readOnly && (
+          <button
+            className="btn btn-ghost"
+            onClick={() => setIsEditing(true)}
+            style={{ fontSize: "0.6875rem", padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}
+          >
+            <Edit2 size={12} />
+            {rawEntries.length > 0 ? "Edit extracted data" : "Add data manually"}
+          </button>
+        )}
+        {readOnly && rawEntries.length > 0 && (
+          <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+            <Lock size={12} />
+            Data is read-only for admins
+          </div>
+        )}
       </div>
     );
   }
 
   // ── EDIT MODE ─────────────────────────────────────────────────────────────
+  // Return view mode if readOnly is enabled
+  if (readOnly) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* View mode for read-only */}
+        {Object.keys(editedFields).length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {Object.entries(editedFields).map(([k, v]) => (
+              <div key={k} style={{
+                display: "flex", gap: 10, alignItems: "flex-start",
+                fontSize: "0.6875rem", padding: "6px 8px",
+                background: "rgba(0,0,0,0.02)", borderRadius: 4,
+              }}>
+                <span style={labelStyle}>{k.replace(/_/g, " ")}</span>
+                <span style={{ color: "var(--text-primary)", wordBreak: "break-word", flex: 1 }}>{v}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginBottom: 8 }}>
+            No data extracted.
+          </p>
+        )}
+        <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+          <Lock size={12} />
+          Admins cannot edit document data
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+
 
       {/* Locked fields — always read-only */}
       {Object.keys(lockedFields).length > 0 && (

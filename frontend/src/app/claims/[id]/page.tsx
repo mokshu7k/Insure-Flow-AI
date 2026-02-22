@@ -18,7 +18,7 @@ import {
     ArrowLeft, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
     ChevronDown, ChevronUp, Send, Loader2, RefreshCw, Flag, Clock,
     CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X,
-    BookOpen, Search, Filter, ChevronLeft, ChevronRight, FilePlus2,Download
+    BookOpen, Search, Filter, ChevronLeft, ChevronRight, FilePlus2, Download, Eye
 } from "lucide-react";
 import { ClaimReportRenderer } from "@/components/ui/ClaimReportRenderer";
 import { FraudAgentPanel } from "@/components/ui/FraudAgentPanel";
@@ -345,6 +345,9 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
             if (fileInputRef.current) fileInputRef.current.value = "";
             setUploadSuccess(true);
             setTimeout(() => setUploadSuccess(false), 3000);
+            // Refresh claim (status may have auto-transitioned) and timeline
+            claimService.get(id).then(setClaim).catch(() => {});
+            complianceService.auditTrail(id, 100).then(setTimelineEntries).catch(() => {});
         } catch {
             setDocError("Upload failed — please check the file and try again.");
         } finally {
@@ -405,6 +408,11 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                 {canTransitionTo(claim.status, "APPROVED") && (
                                     <button className="btn btn-ghost" onClick={() => changeStatus("APPROVED")} disabled={actionLoading} style={{ color: "var(--green)", borderColor: "var(--green-border)" }}>
                                         <CheckCircle size={13} /> Approve
+                                    </button>
+                                )}
+                                {canTransitionTo(claim.status, "UNDER_REVIEW") && (
+                                    <button className="btn btn-ghost" onClick={() => changeStatus("UNDER_REVIEW")} disabled={actionLoading} style={{ color: "var(--blue)", borderColor: "var(--blue-border)" }}>
+                                        <Eye size={13} /> Under Review
                                     </button>
                                 )}
                                 {canTransitionTo(claim.status, "MANUAL_REVIEW_REQUIRED") && (
@@ -592,6 +600,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                         </div>
                                                         <EditableExtractedData
                                                             document={doc}
+                                                            readOnly={canAction}
                                                             onUpdate={(updated) => {
                                                                 setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
                                                             }}
@@ -601,6 +610,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                 ) : doc.extracted_data && Object.keys(doc.extracted_data).length > 0 ? (
                                                     <EditableExtractedData
                                                         document={doc}
+                                                        readOnly={canAction}
                                                         onUpdate={(updated) => {
                                                             setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
                                                         }}
@@ -613,6 +623,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                                         </div>
                                                         <EditableExtractedData
                                                             document={doc}
+                                                            readOnly={canAction}
                                                             onUpdate={(updated) => {
                                                                 setDocuments((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
                                                             }}

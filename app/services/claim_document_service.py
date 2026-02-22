@@ -31,12 +31,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.constants import AuditAction, ClaimStatus
 from app.core.exceptions import BusinessRuleError, NotFoundError, PermissionDeniedError
 from app.models.claim import Claim
 from app.models.claim_document import ClaimDocument
+from app.models.claim_status_history import ClaimStatusHistory
 from app.models.document_requirement import DocumentRequirement
 from app.models.kyc_document import KYCDocument
 from app.models.policy import Policy
+from app.services.audit_service import log_action
 from app.services.extraction_service import (
     CONSISTENCY_RULES,
     build_extraction_prompt,
@@ -128,6 +131,46 @@ async def upload_claim_document(
         requires_manual_review=True,
         gcs_path=gcs_blob_name,  # None when GCS is not configured
     )
+
+    # ── Audit log for document upload ────────────────────────────────────────
+    await log_action(
+        db=db,
+        action_type=AuditAction.DOCUMENT_UPLOADED,
+        entity_type="CLAIM",
+        actor_id=uploader_id,
+        entity_id=claim_id,
+        metadata={
+            "document_type": document_type_code,
+            "filename": file.filename,
+            "doc_id": str(doc_uuid),
+        },
+    )
+
+    # ── Auto-transition MANUAL_REVIEW_REQUIRED → UNDER_REVIEW on doc upload ─
+    # When admin requested docs and put the claim in MANUAL_REVIEW_REQUIRED,
+    # uploading the requested document should return it to the review queue.
+    if claim.status == ClaimStatus.MANUAL_REVIEW_REQUIRED:
+        old_status = claim.status
+        claim.status = ClaimStatus.UNDER_REVIEW
+        await log_action(
+            db=db,
+            action_type=AuditAction.CLAIM_STATUS_CHANGED,
+            entity_type="CLAIM",
+            actor_id=uploader_id,
+            entity_id=claim_id,
+            metadata={
+                "from": old_status,
+                "to": ClaimStatus.UNDER_REVIEW,
+                "notes": "Requested document uploaded by claimant — returned to review queue",
+            },
+        )
+        db.add(ClaimStatusHistory(
+            claim_id=uuid.UUID(claim_id),
+            from_status=old_status,
+            to_status=ClaimStatus.UNDER_REVIEW,
+            changed_by=uuid.UUID(uploader_id),
+            reason="Requested document uploaded by claimant — returned to review queue",
+        ))
 
     # ── If pre-extracted data is provided: skip background OCR ──────────────
     if precomputed_data is not None:
