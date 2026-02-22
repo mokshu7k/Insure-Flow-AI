@@ -133,7 +133,12 @@ DISCHARGE_SUMMARY_TEMPLATE = {
     ],
     "instructions": (
         "Extract full clinical picture: diagnosis (primary + secondary), procedures, treating doctor, "
-        "and discharge condition. Dates in DD/MM/YYYY."
+        "and discharge condition. Dates in DD/MM/YYYY. "
+        "CRITICAL — medications_at_discharge: scan the ENTIRE discharge medication table and include EVERY drug row. "
+        "Do NOT skip any row even if dosage, frequency or duration is blank for that row — use null for missing cells. "
+        "Frequency notation like 1+0+1 means morning+afternoon+night; copy it EXACTLY as printed. "
+        "Copy drug names exactly as they appear including prefix (Tab., Cap.), brand name, and any strength. "
+        "If the medication table continues across multiple sections or pages, merge all rows into one array."
     ),
 }
 DISCHARGE_SUMMARY_RULES = {"rules": [
@@ -153,7 +158,16 @@ PRESCRIPTION_TEMPLATE = {
          "item_fields": [{"key": "name", "type": "string"}, {"key": "dosage", "type": "string"}, {"key": "frequency", "type": "string"}, {"key": "duration", "type": "string"}]},
         {"key": "doctor_signature_present", "type": "boolean", "required": True, "label": "Doctor Signature/Stamp Present?"},
     ],
-    "instructions": "Extract ALL medications with dosage, frequency, duration. Doctor signature/stamp is mandatory.",
+    "instructions": (
+        "Extract ALL medications from the prescription. "
+        "CRITICAL — medications array: include EVERY drug row from the prescription table, even if dosage, "
+        "frequency, or duration is blank for that entry — use null for missing cells, NEVER skip the row. "
+        "Frequency is written as morning+afternoon+night (e.g. 1+0+1, 0+0+1, 0+2+0) — copy EXACTLY as printed. "
+        "Drug names: copy exactly as printed including prefix (Tab., Cap., Inj., Syp., etc.), brand name, "
+        "and any strength embedded in the name (e.g. 'Tab. Ultrafen-plus', 'Cap. Progon200mg'). "
+        "If the prescription spans multiple pages, merge all medication rows into a single array. "
+        "Doctor signature/stamp must be present."
+    ),
 }
 PRESCRIPTION_RULES = {"rules": [
     {"field": "prescription_date", "check": "date_not_future", "message": "Prescription date cannot be future"},

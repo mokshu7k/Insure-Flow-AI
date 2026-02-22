@@ -116,7 +116,28 @@ async def upload_claim_document(
         promoted = promote_fields(document_type_code, precomputed_data)
         doc.ocr_status = "COMPLETED"
         doc.extracted_data = precomputed_data
-        doc.extraction_confidence = 0.9
+
+        # Compute real confidence from template if requirement is available
+        computed_confidence = 0.9  # fallback
+        if req_uuid:
+            from app.models.document_requirement import DocumentRequirement
+            req_res = await db.execute(
+                select(DocumentRequirement).where(DocumentRequirement.id == req_uuid)
+            )
+            req_obj = req_res.scalar_one_or_none()
+            if req_obj and req_obj.extraction_template:
+                template_fields = req_obj.extraction_template.get("fields", [])
+                req_keys = [f["key"] for f in template_fields if f.get("required", False)]
+                opt_keys = [f["key"] for f in template_fields if not f.get("required", False)]
+                missing = [k for k in req_keys if k not in precomputed_data or precomputed_data[k] is None]
+                req_score = (len(req_keys) - len(missing)) / len(req_keys) if req_keys else 1.0
+                opt_score = (
+                    sum(1 for k in opt_keys if k in precomputed_data and precomputed_data[k] is not None) / len(opt_keys)
+                    if opt_keys else 1.0
+                )
+                computed_confidence = round(req_score * 0.85 + opt_score * 0.15, 4)
+
+        doc.extraction_confidence = computed_confidence
         doc.validation_status = "ACCEPTED"
         doc.validation_reason = (
             f"Pre-extracted via inline OCR — {len(precomputed_data)} fields."
@@ -251,7 +272,7 @@ async def _run_extraction_background(
                     for f in requirement.extraction_template.get("fields", [])
                     if f.get("required", False)
                 ]
-                missing_fields = [k for k in required_keys if not fields.get(k)]
+                missing_fields = [k for k in required_keys if k not in fields or fields[k] is None]
 
             # ── Compute real confidence from template coverage ───────────────
             if not fields:
@@ -265,7 +286,7 @@ async def _run_extraction_background(
                 else:
                     req_score = 1.0
                 opt_score = (
-                    sum(1 for k in opt_keys if fields.get(k)) / len(opt_keys)
+                    sum(1 for k in opt_keys if k in fields and fields[k] is not None) / len(opt_keys)
                     if opt_keys else 1.0
                 )
                 # Required fields are 85% of the score, optional 15%
@@ -801,7 +822,7 @@ async def inline_ocr_preview(
             for f in template.get("fields", [])
             if f.get("required", False)
         ]
-        missing_fields = [k for k in required_keys if not fields.get(k)]
+        missing_fields = [k for k in required_keys if k not in fields or fields[k] is None]
         opt_keys = [
             f["key"] for f in template.get("fields", []) if not f.get("required", False)
         ]
@@ -810,7 +831,7 @@ async def inline_ocr_preview(
             if required_keys else 1.0
         )
         opt_score = (
-            sum(1 for k in opt_keys if fields.get(k)) / len(opt_keys)
+            sum(1 for k in opt_keys if k in fields and fields[k] is not None) / len(opt_keys)
             if opt_keys else 1.0
         )
         confidence = round(req_score * 0.85 + opt_score * 0.15, 4)

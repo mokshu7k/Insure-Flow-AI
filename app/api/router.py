@@ -1,7 +1,7 @@
 """Main API router — all routes registered here (flat structure)."""
 from fastapi import APIRouter
 
-from app.api import auth, claim_documents, claims, fraud, settlements, compliance, dashboard, agent, adjuster_agent, speech, cashless, policies
+from app.api import auth, claim_documents, claims, fraud, settlements, compliance, dashboard, agent, adjuster_agent, speech, cashless, policies, audit
 
 api_router = APIRouter()
 
@@ -17,3 +17,4 @@ api_router.include_router(agent.router)
 api_router.include_router(adjuster_agent.router)
 api_router.include_router(speech.router)
 api_router.include_router(cashless.router)
+api_router.include_router(audit.router)

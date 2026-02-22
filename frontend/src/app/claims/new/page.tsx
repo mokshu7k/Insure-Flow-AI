@@ -14,7 +14,7 @@ import type { ClaimDocumentResponse, ClaimType, DocumentRequirement, DocumentTyp
 import {
     Heart, Car, ReceiptText, Upload, X, CheckCircle2,
     ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader, AlertTriangle,
-    Shield, AlertCircle, Building2, Edit2,
+    Shield, AlertCircle, Building2, Edit2, Lock,
 } from "lucide-react";
 
 // ── Document spec (one upload slot) ──────────────────────────────────────────
@@ -96,11 +96,12 @@ const TYPE_META: Record<ClaimType, { icon: React.ReactNode; title: string; desc:
 
 // ── File drop zone ────────────────────────────────────────────────────────────
 function FileZone({
-    spec, file, onChange, validationError, validationResult, onResubmit, checking,
+    spec, files, onAdd, onRemoveAt, validationError, validationResult, onResubmit, checking,
 }: {
     spec: DocSpec;
-    file: File | undefined;
-    onChange: (f: File | null) => void;
+    files: File[];
+    onAdd: (newFiles: File[]) => void;
+    onRemoveAt: (i: number) => void;
     validationError?: string | null;
     validationResult?: { valid: boolean; reason: string; detected_type?: string } | null;
     onResubmit?: () => void;
@@ -108,89 +109,105 @@ function FileZone({
 }) {
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
-        const dropped = e.dataTransfer.files[0];
-        if (dropped) onChange(dropped);
-    }, [onChange]);
+        const dropped = Array.from(e.dataTransfer.files);
+        if (dropped.length) onAdd(dropped);
+    }, [onAdd]);
 
+    const hasFiles = files.length > 0;
     const isInvalid = validationResult && !validationResult.valid;
     const isValid = validationResult && validationResult.valid;
     const borderColor = isInvalid
         ? "rgba(239,68,68,0.7)"
         : isValid
             ? "var(--green)"
-            : file
+            : hasFiles
                 ? "var(--green)"
                 : "var(--border)";
     const bgColor = isInvalid
         ? "rgba(239,68,68,0.05)"
         : isValid
             ? "var(--green-bg, rgba(34,197,94,0.06))"
-            : file
+            : hasFiles
                 ? "var(--green-bg, rgba(34,197,94,0.06))"
                 : "var(--bg-surface)";
 
+    const triggerPicker = () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".pdf,.jpg,.jpeg,.png,.webp";
+        input.multiple = true;
+        input.onchange = (ev) => {
+            const picked = Array.from((ev.target as HTMLInputElement).files ?? []);
+            if (picked.length) onAdd(picked);
+        };
+        input.click();
+    };
+
     return (
         <div>
+        {/* Uploaded files list */}
+        {files.map((file, i) => (
+            <div key={i} style={{
+                border: `1px solid ${i === 0 ? borderColor : "var(--border)"}`,
+                borderRadius: 6, padding: "10px 14px", background: i === 0 ? bgColor : "var(--bg-surface)",
+                display: "flex", alignItems: "center", gap: 10, marginBottom: 4,
+            }}>
+                {i === 0 && checking ? (
+                    <Loader2 size={15} color="var(--blue)" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+                ) : i === 0 && isInvalid ? (
+                    <AlertCircle size={15} color="var(--red, #ef4444)" style={{ flexShrink: 0 }} />
+                ) : (
+                    <CheckCircle2 size={15} color="var(--green)" style={{ flexShrink: 0 }} />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "0.75rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+                    <div style={{ fontSize: "0.625rem", color: "var(--text-muted)" }}>
+                        {(file.size / 1024).toFixed(0)} KB
+                        {i === 0 && checking && <span style={{ color: "var(--blue)", marginLeft: 6 }}>Checking relevance…</span>}
+                        {i === 0 && isValid && <span style={{ color: "var(--green)", marginLeft: 6 }}>✓ Verified</span>}
+                        {i === 0 && isInvalid && <span style={{ color: "var(--red, #ef4444)", fontWeight: 600, marginLeft: 6 }}>Invalid document</span>}
+                    </div>
+                </div>
+                <button
+                    onClick={(e) => { e.stopPropagation(); onRemoveAt(i); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
+                >
+                    <X size={13} />
+                </button>
+            </div>
+        ))}
+
+        {/* Drop zone — always visible to allow adding more files */}
         <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
             style={{
-                border: `1px dashed ${borderColor}`,
+                border: `1px dashed ${hasFiles ? "var(--border)" : borderColor}`,
                 borderRadius: 6,
                 padding: "12px 14px",
-                background: bgColor,
+                background: hasFiles ? "var(--bg-surface)" : bgColor,
                 display: "flex", alignItems: "center", gap: 10,
                 cursor: "pointer",
                 transition: "border-color 150ms",
             }}
-            onClick={() => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = ".pdf,.jpg,.jpeg,.png,.webp";
-                input.onchange = (ev) => {
-                    const f = (ev.target as HTMLInputElement).files?.[0];
-                    if (f) onChange(f);
-                };
-                input.click();
-            }}
+            onClick={triggerPicker}
         >
-            {file ? (
-                <>
-                    {checking ? (
-                        <Loader2 size={15} color="var(--blue)" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
-                    ) : isInvalid ? (
-                        <AlertCircle size={15} color="var(--red, #ef4444)" style={{ flexShrink: 0 }} />
-                    ) : (
-                        <CheckCircle2 size={15} color="var(--green)" />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: "0.75rem", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
-                        <div style={{ fontSize: "0.625rem", color: "var(--text-muted)" }}>
-                            {(file.size / 1024).toFixed(0)} KB
-                            {checking && <span style={{ color: "var(--blue)", marginLeft: 6 }}>Checking relevance…</span>}
-                            {isValid && <span style={{ color: "var(--green)", marginLeft: 6 }}>✓ Verified</span>}
-                            {isInvalid && <span style={{ color: "var(--red, #ef4444)", fontWeight: 600, marginLeft: 6 }}>Invalid document</span>}
-                        </div>
+            <Upload size={15} color="var(--text-muted)" />
+            <div style={{ flex: 1 }}>
+                {hasFiles ? (
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                        Add more files for <span style={{ fontWeight: 500 }}>{spec.label}</span>
                     </div>
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onChange(null); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "var(--text-muted)" }}
-                    >
-                        <X size={13} />
-                    </button>
-                </>
-            ) : (
-                <>
-                    <Upload size={15} color="var(--text-muted)" />
-                    <div style={{ flex: 1 }}>
+                ) : (
+                    <>
                         <div style={{ fontSize: "0.75rem", fontWeight: 500 }}>
                             {spec.label}
                             {spec.required && <span style={{ color: "var(--red, #ef4444)", marginLeft: 3 }}>*</span>}
                         </div>
                         <div style={{ fontSize: "0.625rem", color: "var(--text-muted)" }}>{spec.hint}</div>
-                    </div>
-                </>
-            )}
+                    </>
+                )}
+            </div>
         </div>
 
         {/* Invalid document banner with resubmit */}
@@ -249,15 +266,38 @@ function FileZone({
     );
 }
 
+// ── Locked-field patterns (mirrors EditableExtractedData) ──────────────────
+const LOCKED_FIELD_PATTERNS: RegExp[] = [
+    /total.*(claim|amount|amt)/,
+    /amount.*(claim|total)/,
+    /claim.*(amount|amt)/,
+    /date.*(admit|admission|hospitali)/,
+    /admit.*(date|on)/,
+    /admission.*(date|on)/,
+    /date.*(discharge|exit)/,
+    /discharge.*(date|on)/,
+    /vehicle.*(reg|registration|number|no)/,
+    /reg(istration)?.*(vehicle|no|number)/,
+    /^policy.*(no|number|id)$/,
+    /^pan.*(no|number|card)?$/,
+    /pan_number/,
+    /aadhaar|aadhar/,
+];
+function isLockedField(key: string): boolean {
+    return LOCKED_FIELD_PATTERNS.some((re) => re.test(key.toLowerCase()));
+}
+
 // ── Inline OCR result card (shown below FileZone after extraction) ─────────────
 function InlineOcrCard({
     result,
     edits,
     onFieldChange,
+    sourceCount,
 }: {
     result: InlineOcrResult;
     edits: Record<string, unknown>;
     onFieldChange: (key: string, value: string) => void;
+    sourceCount?: number;
 }) {
     const [isEditing, setIsEditing] = useState(false);
 
@@ -294,8 +334,19 @@ function InlineOcrCard({
                             · {Math.round(result.completeness * 100)}% complete
                         </span>
                     )}
+                    {sourceCount !== undefined && sourceCount > 1 && (
+                        <span style={{
+                            display: "inline-flex", alignItems: "center",
+                            fontSize: "0.5625rem", color: "var(--text-muted)",
+                            background: "var(--bg-muted, rgba(100,116,139,0.08))",
+                            border: "1px solid var(--border)", borderRadius: 4,
+                            padding: "1px 5px", marginLeft: 2,
+                        }}>
+                            {sourceCount} docs
+                        </span>
+                    )}
                 </span>
-                {entries.length > 0 && (
+                {entries.filter(([k, v]) => !Array.isArray(v) && !isLockedField(k)).length > 0 && (
                     <button
                         type="button"
                         onClick={() => setIsEditing(!isEditing)}
@@ -312,36 +363,150 @@ function InlineOcrCard({
             </div>
 
             {/* Extracted fields */}
-            {entries.length > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
-                    {entries.map(([k, v]) => (
-                        <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                            <span style={{
-                                fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "capitalize",
-                                flexShrink: 0, width: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                            }}>
-                                {k.replace(/_/g, " ")}
-                            </span>
-                            {isEditing ? (
-                                <input
-                                    className="input"
-                                    value={String(v ?? "")}
-                                    onChange={e => onFieldChange(k, e.target.value)}
-                                    style={{ flex: 1, fontSize: "0.6875rem", padding: "2px 6px", minWidth: 0 }}
-                                />
-                            ) : (
-                                <span style={{
-                                    fontSize: "0.6875rem", color: "var(--text-primary)",
-                                    fontFamily: "var(--font-mono)",
-                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                }}>
-                                    {String(v ?? "").slice(0, 40)}
-                                </span>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
+            {entries.length > 0 && (() => {
+                const scalarEntries = entries.filter(([, v]) => !Array.isArray(v));
+                const arrayEntries = entries.filter(([, v]) => Array.isArray(v));
+                return (
+                    <>
+                        {scalarEntries.length > 0 && (() => {
+                            const lockedScalars = scalarEntries.filter(([k]) => isLockedField(k));
+                            const editableScalars = scalarEntries.filter(([k]) => !isLockedField(k));
+                            return (
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
+                                    {/* Locked fields — always read-only */}
+                                    {lockedScalars.map(([k, v]) => (
+                                        <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, opacity: 0.75 }}>
+                                            <span style={{
+                                                fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "capitalize",
+                                                flexShrink: 0, width: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                            }}>
+                                                {k.replace(/_/g, " ")}
+                                            </span>
+                                            <span style={{
+                                                fontSize: "0.6875rem", color: "var(--text-primary)",
+                                                fontFamily: "var(--font-mono)",
+                                                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
+                                            }}>
+                                                {String(v ?? "").slice(0, 40)}
+                                            </span>
+                                            <span style={{
+                                                display: "inline-flex", alignItems: "center", gap: 3,
+                                                fontSize: "0.5625rem", color: "var(--text-muted)",
+                                                background: "var(--bg-muted, rgba(100,116,139,0.08))",
+                                                border: "1px solid var(--border)", borderRadius: 4, padding: "1px 5px", flexShrink: 0,
+                                            }} title="Fraud-sensitive — locked">
+                                                <Lock size={8} /> locked
+                                            </span>
+                                        </div>
+                                    ))}
+                                    {/* Editable fields */}
+                                    {editableScalars.map(([k, v]) => (
+                                        <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                            <span style={{
+                                                fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "capitalize",
+                                                flexShrink: 0, width: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                            }}>
+                                                {k.replace(/_/g, " ")}
+                                            </span>
+                                            {typeof v === "boolean" ? (
+                                                <span style={{
+                                                    display: "inline-flex", alignItems: "center", gap: 3,
+                                                    fontSize: "0.625rem", fontWeight: 600,
+                                                    padding: "2px 7px", borderRadius: 10,
+                                                    background: v ? "rgba(34,197,94,0.12)" : "rgba(100,116,139,0.12)",
+                                                    color: v ? "var(--green)" : "var(--text-muted)",
+                                                    border: `1px solid ${v ? "rgba(34,197,94,0.25)" : "rgba(100,116,139,0.2)"}`,
+                                                }}>
+                                                    {v ? "✓ Present" : "✗ Absent"}
+                                                </span>
+                                            ) : isEditing ? (
+                                                <input
+                                                    className="input"
+                                                    value={String(v ?? "")}
+                                                    onChange={e => onFieldChange(k, e.target.value)}
+                                                    style={{ flex: 1, fontSize: "0.6875rem", padding: "2px 6px", minWidth: 0 }}
+                                                />
+                                            ) : (
+                                                <span style={{
+                                                    fontSize: "0.6875rem", color: "var(--text-primary)",
+                                                    fontFamily: "var(--font-mono)",
+                                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                                }}>
+                                                    {String(v ?? "").slice(0, 40)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
+                        {arrayEntries.map(([k, v]) => {
+                            const arr = v as unknown[];
+                            if (!arr.length) return null;
+                            // Primitive array (strings / numbers / booleans) — render as list
+                            const isPrimitive = typeof arr[0] !== "object" || arr[0] === null;
+                            return (
+                                <div key={k} style={{ marginTop: scalarEntries.length > 0 ? 8 : 0 }}>
+                                    <span style={{ fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "capitalize" }}>
+                                        {k.replace(/_/g, " ")}
+                                    </span>
+                                    {isPrimitive ? (
+                                        <ul style={{ margin: "3px 0 0 0", padding: "0 0 0 14px", listStyle: "disc" }}>
+                                            {arr.map((item, ri) => (
+                                                <li key={ri} style={{
+                                                    fontSize: "0.6875rem", color: "var(--text-primary)",
+                                                    padding: "1px 0", lineHeight: 1.4,
+                                                }}>
+                                                    {String(item ?? "—")}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (() => {
+                                        const rows = arr as Record<string, unknown>[];
+                                        const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r)).filter(c => c !== "raw_row")));
+                                        return (
+                                            <div style={{ overflowX: "auto", marginTop: 3 }}>
+                                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.6875rem" }}>
+                                                    <thead>
+                                                        <tr>
+                                                            {cols.map(col => (
+                                                                <th key={col} style={{
+                                                                    textAlign: "left", padding: "2px 6px",
+                                                                    color: "var(--text-muted)", fontWeight: 500,
+                                                                    borderBottom: "1px solid var(--border)",
+                                                                    textTransform: "capitalize", whiteSpace: "nowrap",
+                                                                }}>
+                                                                    {col.replace(/_/g, " ")}
+                                                                </th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {rows.map((row, ri) => (
+                                                            <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "rgba(0,0,0,0.02)" }}>
+                                                                {cols.map(col => (
+                                                                    <td key={col} style={{
+                                                                        padding: "3px 6px",
+                                                                        color: "var(--text-primary)",
+                                                                        fontFamily: "var(--font-mono)",
+                                                                        whiteSpace: "nowrap",
+                                                                    }}>
+                                                                        {String(row[col] ?? "—")}
+                                                                    </td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            );
+                        })}
+                    </>
+                );
+            })()}
 
             {/* Missing required fields — always editable inputs */}
             {hasMissing && (
@@ -441,7 +606,7 @@ function WizardContent() {
     }, [selectedPolicy?.id]);
 
     // Step 2
-    const [files, setFiles] = useState<Map<number, File>>(new Map()); // keyed by docSpec index
+    const [files, setFiles] = useState<Map<number, File[]>>(new Map()); // keyed by docSpec index, value is array of files
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [docErrors, setDocErrors] = useState<Map<number, string>>(new Map());
@@ -451,6 +616,8 @@ function WizardContent() {
     const [processingDocs, setProcessingDocs] = useState<Set<number>>(new Set());
     // User-editable extracted field overrides (keyed by doc-slot index)
     const [docFieldEdits, setDocFieldEdits] = useState<Map<number, Record<string, unknown>>>(new Map());
+    // How many files were merged to produce the OCR result for a slot
+    const [docOcrSourceCounts, setDocOcrSourceCounts] = useState<Map<number, number>>(new Map());
 
     // Step 3
     const [claimAmount, setClaimAmount] = useState("");
@@ -529,7 +696,7 @@ function WizardContent() {
             if (doc.total_amount && doc.total_amount > 0) return String(doc.total_amount);
             if (!doc.extracted_data) continue;
             const d = doc.extracted_data as Record<string, unknown>;
-            const candidates = ["total_amount", "claim_amount", "amount", "net_amount", "bill_amount"];
+            const candidates = ["total_amount", "claim_amount", "amount", "net_amount", "bill_amount", "estimated_cost", "total_bill_amount", "gross_amount", "invoice_amount", "payable_amount"];
             for (const key of candidates) {
                 if (d[key] !== undefined && d[key] !== null) {
                     const raw = d[key];
@@ -559,29 +726,98 @@ function WizardContent() {
         }
     }
 
-    // ── Run inline OCR per doc immediately on file select ────────────────────
-    const runInlineOcr = useCallback(async (idx: number, file: File, ct: ClaimType, specList: DocSpec[]) => {
+    // ── Run inline OCR for all files in a slot, merge results ───────────────
+    const runInlineOcr = useCallback(async (idx: number, allFiles: File[], ct: ClaimType, specList: DocSpec[]) => {
         const spec = specList[idx];
-        if (!spec) return;
+        if (!spec || allFiles.length === 0) return;
         setProcessingDocs((prev) => new Set(prev).add(idx));
         try {
-            const result = await documentService.inlineOcr(
-                file,
-                spec.document_type_code ?? spec.type,
-                ct,
-                spec.requirement_id,
-            );
-            setDocOcrResults((prev) => new Map(prev).set(idx, result));
-            // Seed editable fields from OCR result
-            setDocFieldEdits((prev) => new Map(prev).set(idx, { ...result.extracted_fields }));
-            // Auto-prefill amount from first document that has a total_amount
-            const rawAmt = result.extracted_fields.total_amount;
-            if (rawAmt) {
-                const val = parseFloat(String(rawAmt).replace(/[^0-9.]/g, ""));
-                if (!isNaN(val) && val > 0) setClaimAmount((prev) => prev || String(val));
+            // OCR each file sequentially; skip individual failures
+            const results: InlineOcrResult[] = [];
+            for (const file of allFiles) {
+                try {
+                    const r = await documentService.inlineOcr(
+                        file,
+                        spec.document_type_code ?? spec.type,
+                        ct,
+                        spec.requirement_id,
+                    );
+                    results.push(r);
+                } catch {
+                    // skip this file, keep going
+                }
+            }
+
+            let merged: InlineOcrResult;
+            if (results.length === 0) {
+                merged = {
+                    is_relevant: true,
+                    reason: "Could not verify automatically — accepted for manual review.",
+                    detected_type: spec.document_type_code ?? spec.type,
+                    extracted_fields: {},
+                    completeness: 0,
+                    missing_fields: [],
+                };
+            } else if (results.length === 1) {
+                merged = results[0];
+            } else {
+                // Merge: first-non-null value wins per field key
+                const mergedFields: Record<string, unknown> = {};
+                let maxCompleteness = 0;
+                let bestReason = "";
+                let bestDetectedType = spec.document_type_code ?? spec.type;
+                let isRelevant = false;
+
+                for (const r of results) {
+                    if (r.is_relevant) isRelevant = true;
+                    if (r.completeness > maxCompleteness) {
+                        maxCompleteness = r.completeness;
+                        bestReason = r.reason;
+                        bestDetectedType = r.detected_type;
+                    }
+                    for (const [k, v] of Object.entries(r.extracted_fields)) {
+                        if (!(k in mergedFields) && v !== null && v !== undefined) {
+                            mergedFields[k] = v;
+                        }
+                    }
+                }
+
+                // A required field is missing only if no document could supply it
+                const allRequiredKeys = new Set(results.flatMap(r => r.missing_fields));
+                const mergedMissingFields = [...allRequiredKeys].filter(k => !(k in mergedFields));
+
+                const totalRequired = allRequiredKeys.size;
+                const mergedCompleteness = totalRequired > 0
+                    ? Math.max(maxCompleteness, (totalRequired - mergedMissingFields.length) / totalRequired)
+                    : maxCompleteness;
+
+                merged = {
+                    is_relevant: isRelevant,
+                    reason: bestReason,
+                    detected_type: bestDetectedType,
+                    extracted_fields: mergedFields,
+                    completeness: Math.round(mergedCompleteness * 10000) / 10000,
+                    missing_fields: mergedMissingFields,
+                };
+            }
+
+            setDocOcrResults((prev) => new Map(prev).set(idx, merged));
+            setDocOcrSourceCounts((prev) => new Map(prev).set(idx, allFiles.length));
+            setDocFieldEdits((prev) => new Map(prev).set(idx, { ...merged.extracted_fields }));
+
+            // Auto-prefill amount from merged fields — scan all amount-like keys
+            const amtCandidates = ["total_amount", "claim_amount", "amount", "net_amount", "bill_amount", "estimated_cost", "total_bill_amount", "gross_amount", "invoice_amount", "payable_amount"];
+            for (const amtKey of amtCandidates) {
+                const rawAmt = merged.extracted_fields[amtKey];
+                if (rawAmt !== undefined && rawAmt !== null) {
+                    const val = parseFloat(String(rawAmt).replace(/[^0-9.]/g, ""));
+                    if (!isNaN(val) && val > 0) {
+                        setClaimAmount((prev) => prev || String(val));
+                        break;
+                    }
+                }
             }
         } catch {
-            // Network error — be lenient, accept for manual review
             const fallback: InlineOcrResult = {
                 is_relevant: true,
                 reason: "Could not verify automatically — accepted for manual review.",
@@ -622,25 +858,27 @@ function WizardContent() {
             // Upload each doc with its pre-extracted data (or raw if OCR failed/skipped)
             const results: ClaimDocumentResponse[] = [];
             const newDocErrors = new Map<number, string>();
-            for (const [idx, file] of files.entries()) {
+            for (const [idx, fileList] of files.entries()) {
                 const spec = specs[idx];
                 const precomputed = docFieldEdits.get(idx) ?? docOcrResults.get(idx)?.extracted_fields;
-                try {
-                    const doc = await documentService.uploadClaimDoc(
-                        claim.id,
-                        file,
-                        spec.document_type_code ?? spec.type,
-                        spec.requirement_id,
-                        precomputed && Object.keys(precomputed).length > 0 ? precomputed : undefined,
-                    );
-                    results.push(doc);
-                } catch (err) {
-                    const axErr = err as { response?: { status?: number; data?: { detail?: string; error_code?: string } } };
-                    if (axErr.response?.status === 400) {
-                        const reason = axErr.response?.data?.detail ?? "This document appears to be incorrect.";
-                        newDocErrors.set(idx, reason);
-                    } else {
-                        throw err;
+                for (const file of fileList) {
+                    try {
+                        const doc = await documentService.uploadClaimDoc(
+                            claim.id,
+                            file,
+                            spec.document_type_code ?? spec.type,
+                            spec.requirement_id,
+                            precomputed && Object.keys(precomputed).length > 0 ? precomputed : undefined,
+                        );
+                        results.push(doc);
+                    } catch (err) {
+                        const axErr = err as { response?: { status?: number; data?: { detail?: string; error_code?: string } } };
+                        if (axErr.response?.status === 400) {
+                            const reason = axErr.response?.data?.detail ?? "This document appears to be incorrect.";
+                            newDocErrors.set(idx, reason);
+                        } else {
+                            throw err;
+                        }
                     }
                 }
             }
@@ -990,7 +1228,7 @@ function WizardContent() {
 
                 {/* ── Step 3: Documents + inline OCR ──────────────────────── */}
                 {step === 3 && claimType && (() => {
-                    const allRequiredHaveFiles = specs.every((spec, idx) => !spec.required || files.has(idx));
+                    const allRequiredHaveFiles = specs.every((spec, idx) => !spec.required || (files.get(idx)?.length ?? 0) > 0);
                     const anyProcessing = processingDocs.size > 0;
                     const hasInvalidDocs = [...docOcrResults.values()].some(r => !r.is_relevant);
                     const canUpload = allRequiredHaveFiles && !anyProcessing && !hasInvalidDocs;
@@ -1014,7 +1252,7 @@ function WizardContent() {
                                         <div key={idx} style={{ marginBottom: 8 }}>
                                             <FileZone
                                                 spec={spec}
-                                                file={files.get(idx)}
+                                                files={files.get(idx) ?? []}
                                                 validationError={docErrors.get(idx) ?? null}
                                                 validationResult={validationResult}
                                                 checking={isProcessing}
@@ -1022,14 +1260,43 @@ function WizardContent() {
                                                     setFiles(prev => { const n = new Map(prev); n.delete(idx); return n; });
                                                     setDocOcrResults(prev => { const n = new Map(prev); n.delete(idx); return n; });
                                                     setDocFieldEdits(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    setDocOcrSourceCounts(prev => { const n = new Map(prev); n.delete(idx); return n; });
                                                     setDocErrors(prev => { const n = new Map(prev); n.delete(idx); return n; });
                                                 }}
-                                                onChange={(f) => {
-                                                    setFiles(prev => { const n = new Map(prev); if (f) n.set(idx, f); else n.delete(idx); return n; });
+                                                onAdd={(newFiles) => {
+                                                    setFiles(prev => {
+                                                        const n = new Map(prev);
+                                                        n.set(idx, [...(prev.get(idx) ?? []), ...newFiles]);
+                                                        return n;
+                                                    });
                                                     setDocErrors(prev => { const n = new Map(prev); n.delete(idx); return n; });
-                                                    setDocOcrResults(prev => { const n = new Map(prev); n.delete(idx); return n; });
-                                                    setDocFieldEdits(prev => { const n = new Map(prev); n.delete(idx); return n; });
-                                                    if (f && claimType) runInlineOcr(idx, f, claimType, specs);
+                                                    if (claimType) {
+                                                        // Re-run OCR on all files in slot (incl. newly added) and merge
+                                                        const allFiles = [...(files.get(idx) ?? []), ...newFiles];
+                                                        setDocOcrResults(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                        setDocFieldEdits(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                        runInlineOcr(idx, allFiles, claimType, specs);
+                                                    }
+                                                }}
+                                                onRemoveAt={(fileIdx) => {
+                                                    const current = files.get(idx) ?? [];
+                                                    const updated = current.filter((_, i) => i !== fileIdx);
+                                                    setFiles(prev => {
+                                                        const n = new Map(prev);
+                                                        if (updated.length === 0) n.delete(idx); else n.set(idx, updated);
+                                                        return n;
+                                                    });
+                                                    if (updated.length === 0) {
+                                                        setDocOcrResults(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                        setDocFieldEdits(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                        setDocOcrSourceCounts(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                        setDocErrors(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    } else if (claimType) {
+                                                        // Re-run OCR on remaining files
+                                                        setDocOcrResults(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                        setDocFieldEdits(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                        runInlineOcr(idx, updated, claimType, specs);
+                                                    }
                                                 }}
                                             />
                                             {/* Spinner while OCR runs */}
@@ -1056,6 +1323,7 @@ function WizardContent() {
                                                     onFieldChange={(k, v) => setDocFieldEdits(prev =>
                                                         new Map(prev).set(idx, { ...(prev.get(idx) ?? ocrResult.extracted_fields), [k]: v })
                                                     )}
+                                                    sourceCount={docOcrSourceCounts.get(idx)}
                                                 />
                                             )}
                                         </div>

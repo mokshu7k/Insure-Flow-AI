@@ -169,44 +169,6 @@ export default function AdjusterPage() {
                             </div>
                         )}
 
-                        {/* Messages */}
-                        <div style={{ flex: 1, overflowY: "auto", padding: "24px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-                            {messages.map((msg, i) => (
-                                <div key={i} style={{
-                                    display: "flex", alignItems: "flex-start", gap: 10,
-                                    flexDirection: msg.role === "user" ? "row-reverse" : "row",
-                                }}>
-                                    {/* Avatar */}
-                                    <div style={{
-                                        width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-                                        background: msg.role === "ai" ? "var(--blue-bg)" : "var(--bg-surface)",
-                                        border: `1px solid ${msg.role === "ai" ? "var(--blue-border)" : "var(--border)"}`,
-                                        display: "flex", alignItems: "center", justifyContent: "center",
-                                    }}>
-                                        {msg.role === "ai"
-                                            ? <Bot size={15} color="var(--blue)" />
-                                            : <User size={15} color="var(--text-muted)" />
-                                        }
-                                    </div>
-
-                                    {/* Bubble */}
-                                    <div style={{
-                                        maxWidth: "78%",
-                                        background: msg.role === "user" ? "var(--blue)" : "var(--bg-surface)",
-                                        color: msg.role === "user" ? "#fff" : "var(--text-primary)",
-                                        border: msg.role === "user" ? "none" : "1px solid var(--border)",
-                                        borderRadius: msg.role === "user" ? "14px 6px 6px 14px" : "6px 14px 14px 6px",
-                                        padding: "12px 16px",
-                                    }}>
-                                        {msg.role === "ai" && (
-                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
-                                                Adjuster Agent
-                                            </div>
-                                        )}
-                                        <div style={{ fontSize: "0.9375rem", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-                                            {msg.content}
-                                        </div>
-                                    </div>
                         <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
                             {messages.map((msg, i) => {
                                 // Format content: ensure → markers are on new lines

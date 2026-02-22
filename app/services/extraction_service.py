@@ -119,8 +119,10 @@ IMPORTANT RULES:
 4. Numbers/amounts: return as raw numbers WITHOUT commas or currency symbols (e.g. 145000 not "₹1,45,000").
 5. Booleans: return true or false (lowercase).
 6. Arrays: return as JSON arrays even if only one item.
-7. If the document appears to be a DIFFERENT type than {document_type_code}, set a top-level key "_wrong_document_type": true and "_detected_type": "<what you think it is>".
-8. Add a top-level "_extraction_notes" key with any observations (unclear text, potential issues, etc.)
+7. Arrays (like medications, line_items): extract EVERY row visible in the table — NEVER skip a row because one cell is blank or illegible. Use null for any missing/illegible cell value. Never return an empty array if rows are visible.
+8. Medication/drug tables: capture every row regardless of whether dosage, frequency, or duration is filled. Frequency in formats like "1+0+1" (morning+afternoon+night) must be kept EXACTLY as written. Copy drug names exactly as printed including abbreviations like Tab., Cap., brand name, and strength (e.g. "Tab. Ultrafen-plus", "Cap. Progon200mg").
+9. If the document appears to be a DIFFERENT type than {document_type_code}, set a top-level key "_wrong_document_type": true and "_detected_type": "<what you think it is>".
+10. Add a top-level "_extraction_notes" key with any observations (unclear text, potential issues, etc.)
 
 EXPECTED OUTPUT FORMAT:
 ```json

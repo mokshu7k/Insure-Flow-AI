@@ -40,6 +40,9 @@ from app.models.audit import AuditLog
 from app.models.consent import ConsentRecord
 from app.models.document_access_log import DocumentAccessLog
 
+# ── Auditor Agent ──
+from app.models.audit_finding import AuditRun, AuditFinding
+
 # ── AI Agents ──
 from app.models.agent_session import AgentSession
 
@@ -64,6 +67,8 @@ __all__ = [
     "Settlement", "QRToken",
     # Audit
     "AuditLog", "ConsentRecord", "DocumentAccessLog",
+    # Auditor Agent
+    "AuditRun", "AuditFinding",
     # AI
     "AgentSession",
 ]

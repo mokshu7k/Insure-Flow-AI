@@ -139,23 +139,103 @@ export function EditableExtractedData({ document, onUpdate, onError }: EditableE
 
   // ── VIEW MODE ─────────────────────────────────────────────────────────────
   if (!isEditing) {
+    // Render from raw extracted_data so arrays/booleans display correctly
+    const rawData = (document.extracted_data ?? {}) as Record<string, unknown>;
+    const rawEntries = Object.entries(rawData);
+
+    const renderValue = (v: unknown) => {
+      if (typeof v === "boolean") {
+        return (
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 3,
+            fontSize: "0.625rem", fontWeight: 600,
+            padding: "2px 7px", borderRadius: 10,
+            background: v ? "rgba(34,197,94,0.12)" : "rgba(100,116,139,0.12)",
+            color: v ? "var(--green)" : "var(--text-muted)",
+            border: `1px solid ${v ? "rgba(34,197,94,0.25)" : "rgba(100,116,139,0.2)"}`,
+          }}>
+            {v ? "✓ Present" : "✗ Absent"}
+          </span>
+        );
+      }
+      if (Array.isArray(v) && v.length > 0) {
+        const isPrimitive = typeof v[0] !== "object" || v[0] === null;
+        if (isPrimitive) {
+          return (
+            <ul style={{ margin: "2px 0 0 0", padding: "0 0 0 14px", listStyle: "disc", width: "100%" }}>
+              {(v as unknown[]).map((item, i) => (
+                <li key={i} style={{ fontSize: "0.6875rem", color: "var(--text-primary)", padding: "1px 0", lineHeight: 1.4 }}>
+                  {String(item ?? "—")}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        // Object array — mini table
+        const rows = v as Record<string, unknown>[];
+        const cols = Array.from(new Set(rows.flatMap(r => Object.keys(r)).filter(c => c !== "raw_row")));
+        return (
+          <div style={{ overflowX: "auto", width: "100%", marginTop: 3 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.6875rem" }}>
+              <thead>
+                <tr>{cols.map(col => (
+                  <th key={col} style={{ textAlign: "left", padding: "2px 6px", color: "var(--text-muted)", fontWeight: 500, borderBottom: "1px solid var(--border)", textTransform: "capitalize", whiteSpace: "nowrap" }}>
+                    {col.replace(/_/g, " ")}
+                  </th>
+                ))}</tr>
+              </thead>
+              <tbody>
+                {rows.map((row, ri) => (
+                  <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "rgba(0,0,0,0.02)" }}>
+                    {cols.map(col => (
+                      <td key={col} style={{ padding: "3px 6px", color: "var(--text-primary)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+                        {String(row[col] ?? "—")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      // Scalar
+      return (
+        <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
+          {String(v ?? "").slice(0, 60)}
+        </span>
+      );
+    };
+
     return (
       <div>
-        {hasFields ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "4px 12px", marginBottom: 8 }}>
-            {Object.entries(editedFields).map(([k, v]) => (
-              <div key={k} style={{ fontSize: "0.6875rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-                <span style={{ textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</span>:{" "}
-                <span style={{ color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
-                  {String(v).slice(0, 50)}
-                </span>
-                {isLocked(k) && (
-                  <span style={lockBadge} title="This field is locked and cannot be changed">
-                    <Lock size={8} /> locked
+        {rawEntries.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 8 }}>
+            {rawEntries.map(([k, v]) => {
+              const isArr = Array.isArray(v) && v.length > 0;
+              return (
+                <div key={k} style={{
+                  fontSize: "0.6875rem", color: "var(--text-muted)",
+                  display: isArr ? "block" : "flex",
+                  alignItems: isArr ? undefined : "center",
+                  gap: 4, flexWrap: "wrap",
+                }}>
+                  <span style={{ textTransform: "capitalize", fontWeight: 500 }}>
+                    {k.replace(/_/g, " ")}:
                   </span>
-                )}
-              </div>
-            ))}
+                  {isArr ? renderValue(v) : (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      {renderValue(v)}
+                      {isLocked(k) && (
+                        <span style={lockBadge} title="This field is locked and cannot be changed">
+                          <Lock size={8} /> locked
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginBottom: 8 }}>
@@ -168,7 +248,7 @@ export function EditableExtractedData({ document, onUpdate, onError }: EditableE
           style={{ fontSize: "0.6875rem", padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}
         >
           <Edit2 size={12} />
-          {hasFields ? "Edit extracted data" : "Add data manually"}
+          {rawEntries.length > 0 ? "Edit extracted data" : "Add data manually"}
         </button>
       </div>
     );
