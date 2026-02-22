@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.config import settings
@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/speech", tags=["speech"])
 
+LANGUAGE_MAP = {
+    "en": "en-IN",
+    "hi": "hi-IN",
+    "mr": "mr-IN",
+}
+
 
 class TranscriptionResponse(BaseModel):
     text: str
@@ -32,12 +38,15 @@ class TranscriptionResponse(BaseModel):
 @router.post("/transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio(
     file: UploadFile = File(...),
+    language: str = Form("en"),
     current_user: User = Depends(get_current_user),
 ) -> TranscriptionResponse:
     """
     Accept a recorded audio blob and return the transcribed text.
     Tries GCP Cloud Speech-to-Text first; falls back to Gemini if unavailable.
     """
+    lang_code = LANGUAGE_MAP.get(language, "en-IN")
+
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty audio file")
@@ -46,7 +55,7 @@ async def transcribe_audio(
 
     # ── Attempt 1: GCP Cloud Speech-to-Text ──────────────────────────────────
     try:
-        text = await gcp_transcribe(content, language_code="en-IN")
+        text = await gcp_transcribe(content, language_code=lang_code)
         if text:
             logger.info("STT via GCP Cloud Speech (%d chars)", len(text))
             return TranscriptionResponse(text=text, method="gcp-speech")
@@ -68,8 +77,9 @@ async def transcribe_audio(
         client = genai.Client(api_key=settings.GCP_API_KEY)
 
         audio_part = _genai_types.Part.from_bytes(data=content, mime_type=mime)
+        lang_label = {"en-IN": "English", "hi-IN": "Hindi", "mr-IN": "Marathi"}.get(lang_code, "English")
         prompt = (
-            "Transcribe the speech in this audio recording exactly as spoken. "
+            f"Transcribe the speech in this audio recording exactly as spoken in {lang_label}. "
             "Return ONLY the transcribed text with no labels or commentary. "
             "If the audio is silent or inaudible, return an empty string."
         )

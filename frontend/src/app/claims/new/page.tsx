@@ -624,48 +624,124 @@ function WizardContent() {
     const [description, setDescription] = useState("");
 
     // Speech-to-text
+    const STT_LANGUAGES = [
+        { code: "en", lang: "en-IN", label: "ENG" },
+        { code: "hi", lang: "hi-IN", label: "हिंदी" },
+        { code: "mr", lang: "mr-IN", label: "मराठी" },
+    ] as const;
+    const [sttLang, setSttLang] = useState<"en" | "hi" | "mr">("en");
     const [isRecording, setIsRecording] = useState(false);
     const [isTranscribing, setIsTranscribing] = useState(false);
     const [sttError, setSttError] = useState<string | null>(null);
+    const [interimText, setInterimText] = useState("");
+    const recognitionRef = useRef<InstanceType<typeof webkitSpeechRecognition> | null>(null);
+
+    // Fallback refs for browsers without Web Speech API
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
 
+    const webSpeechSupported = typeof window !== "undefined" &&
+        ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
     const startRecording = async () => {
         setSttError(null);
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mr = new MediaRecorder(stream);
-            chunksRef.current = [];
-            mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-            mr.onstop = async () => {
-                stream.getTracks().forEach((t) => t.stop());
-                const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
-                setIsTranscribing(true);
-                try {
-                    const form = new FormData();
-                    form.append("file", blob, "recording.webm");
-                    const { data } = await api.post<{ text: string }>("/speech/transcribe", form, {
-                        headers: { "Content-Type": "multipart/form-data" },
-                    });
-                    if (data.text) {
-                        setDescription((prev) => prev ? prev + " " + data.text : data.text);
+        setInterimText("");
+
+        if (webSpeechSupported) {
+            // ── Web Speech API (real-time interim results) ──
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            const langEntry = STT_LANGUAGES.find((l) => l.code === sttLang) ?? STT_LANGUAGES[0];
+            recognition.lang = langEntry.lang;
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.maxAlternatives = 1;
+
+            recognition.onresult = (event: any) => {
+                let interim = "";
+                let finalTranscript = "";
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interim += transcript;
                     }
-                } catch {
-                    setSttError("Transcription failed — try again");
-                } finally {
-                    setIsTranscribing(false);
+                }
+                if (finalTranscript) {
+                    setDescription((prev) => prev ? prev + " " + finalTranscript : finalTranscript);
+                    setInterimText("");
+                } else {
+                    setInterimText(interim);
                 }
             };
-            mediaRecorderRef.current = mr;
-            mr.start();
-            setIsRecording(true);
-        } catch {
-            setSttError("Microphone access denied");
+
+            recognition.onerror = (event: any) => {
+                if (event.error === "not-allowed") {
+                    setSttError("Microphone access denied");
+                } else if (event.error !== "aborted") {
+                    setSttError(`Speech recognition error: ${event.error}`);
+                }
+                setIsRecording(false);
+                setInterimText("");
+            };
+
+            recognition.onend = () => {
+                setIsRecording(false);
+                setInterimText("");
+            };
+
+            try {
+                recognition.start();
+                recognitionRef.current = recognition;
+                setIsRecording(true);
+            } catch {
+                setSttError("Could not start speech recognition");
+            }
+        } else {
+            // ── Fallback: MediaRecorder → server transcription ──
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const mr = new MediaRecorder(stream);
+                chunksRef.current = [];
+                mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+                mr.onstop = async () => {
+                    stream.getTracks().forEach((t) => t.stop());
+                    const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+                    setIsTranscribing(true);
+                    try {
+                        const form = new FormData();
+                        form.append("file", blob, "recording.webm");
+                        form.append("language", sttLang);
+                        const { data } = await api.post<{ text: string }>("/speech/transcribe", form, {
+                            headers: { "Content-Type": "multipart/form-data" },
+                        });
+                        if (data.text) {
+                            setDescription((prev) => prev ? prev + " " + data.text : data.text);
+                        }
+                    } catch {
+                        setSttError("Transcription failed — try again");
+                    } finally {
+                        setIsTranscribing(false);
+                    }
+                };
+                mediaRecorderRef.current = mr;
+                mr.start();
+                setIsRecording(true);
+            } catch {
+                setSttError("Microphone access denied");
+            }
         }
     };
 
     const stopRecording = () => {
-        mediaRecorderRef.current?.stop();
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+            recognitionRef.current = null;
+        }
+        if (mediaRecorderRef.current) {
+            mediaRecorderRef.current.stop();
+        }
         setIsRecording(false);
     };
     const [claimId, setClaimId] = useState<string | null>(null);
@@ -1445,30 +1521,57 @@ function WizardContent() {
                         <div style={{ marginBottom: 20 }}>
                             <label style={{ fontSize: "0.75rem", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                                 <span>Description</span>
-                                <button
-                                    type="button"
-                                    title={isRecording ? "Stop recording" : "Dictate description"}
-                                    onClick={isRecording ? stopRecording : startRecording}
-                                    disabled={isTranscribing}
-                                    style={{
-                                        display: "flex", alignItems: "center", gap: 5,
-                                        padding: "3px 10px", borderRadius: 20,
-                                        border: `1px solid ${isRecording ? "var(--red, #ef4444)" : "var(--border)"}`,
-                                        background: isRecording ? "rgba(239,68,68,0.08)" : "var(--bg-surface)",
-                                        color: isRecording ? "var(--red, #ef4444)" : "var(--text-muted)",
-                                        cursor: isTranscribing ? "wait" : "pointer",
-                                        fontSize: "0.6875rem", fontWeight: 500,
-                                        transition: "all 150ms",
-                                    }}
-                                >
-                                    {isTranscribing ? (
-                                        <><Loader size={12} className="spin" /> Transcribing…</>
-                                    ) : isRecording ? (
-                                        <><MicOff size={12} /> Stop</>
-                                    ) : (
-                                        <><Mic size={12} /> Dictate</>
-                                    )}
-                                </button>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    {/* Language toggle */}
+                                    <div style={{
+                                        display: "flex", borderRadius: 20, overflow: "hidden",
+                                        border: "1px solid var(--border)", fontSize: "0.625rem", fontWeight: 600,
+                                    }}>
+                                        {STT_LANGUAGES.map((l) => (
+                                            <button
+                                                key={l.code}
+                                                type="button"
+                                                disabled={isRecording}
+                                                onClick={() => setSttLang(l.code as "en" | "hi" | "mr")}
+                                                style={{
+                                                    padding: "2px 10px",
+                                                    border: "none",
+                                                    cursor: isRecording ? "not-allowed" : "pointer",
+                                                    background: sttLang === l.code ? "var(--accent, #6366f1)" : "transparent",
+                                                    color: sttLang === l.code ? "#fff" : "var(--text-muted)",
+                                                    transition: "all 150ms",
+                                                }}
+                                            >
+                                                {l.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {/* Record / Stop button */}
+                                    <button
+                                        type="button"
+                                        title={isRecording ? "Stop recording" : "Dictate description"}
+                                        onClick={isRecording ? stopRecording : startRecording}
+                                        disabled={isTranscribing}
+                                        style={{
+                                            display: "flex", alignItems: "center", gap: 5,
+                                            padding: "3px 10px", borderRadius: 20,
+                                            border: `1px solid ${isRecording ? "var(--red, #ef4444)" : "var(--border)"}`,
+                                            background: isRecording ? "rgba(239,68,68,0.08)" : "var(--bg-surface)",
+                                            color: isRecording ? "var(--red, #ef4444)" : "var(--text-muted)",
+                                            cursor: isTranscribing ? "wait" : "pointer",
+                                            fontSize: "0.6875rem", fontWeight: 500,
+                                            transition: "all 150ms",
+                                        }}
+                                    >
+                                        {isTranscribing ? (
+                                            <><Loader size={12} className="spin" /> Transcribing…</>
+                                        ) : isRecording ? (
+                                            <><MicOff size={12} /> Stop</>
+                                        ) : (
+                                            <><Mic size={12} /> Dictate</>
+                                        )}
+                                    </button>
+                                </div>
                             </label>
                             {isRecording && (
                                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontSize: "0.6875rem", color: "var(--red, #ef4444)" }}>
@@ -1482,11 +1585,16 @@ function WizardContent() {
                             <textarea
                                 className="input"
                                 rows={3}
-                                value={description}
-                                onChange={(e) => setDescription(e.target.value)}
+                                value={interimText ? (description ? description + " " + interimText : interimText) : description}
+                                onChange={(e) => { setDescription(e.target.value); setInterimText(""); }}
                                 placeholder={isRecording ? "Listening…" : "Brief description of the claim… or click Dictate to speak"}
                                 style={{ width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }}
                             />
+                            {interimText && (
+                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: 2, fontStyle: "italic" }}>
+                                    {interimText}
+                                </div>
+                            )}
                         </div>
 
                         <div style={{
