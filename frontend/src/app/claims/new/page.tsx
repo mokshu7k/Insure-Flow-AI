@@ -6,15 +6,15 @@ import { CommandLayout } from "@/components/layout/CommandLayout";
 import { useAuthStore } from "@/store/authStore";
 import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
+import type { InlineOcrResult } from "@/services/documentService";
 import { complianceService } from "@/services/complianceService";
 import { policyService } from "@/services/policyService";
 import api from "@/services/api";
-import { EditableExtractedData } from "@/components/ui/EditableExtractedData";
 import type { ClaimDocumentResponse, ClaimType, DocumentRequirement, DocumentType, Policy } from "@/types";
 import {
     Heart, Car, ReceiptText, Upload, X, CheckCircle2,
     ChevronRight, ChevronLeft, ArrowRight, Loader2, FileText, Mic, MicOff, Loader, AlertTriangle,
-    Shield, AlertCircle, Building2,
+    Shield, AlertCircle, Building2, Edit2,
 } from "lucide-react";
 
 // ── Document spec (one upload slot) ──────────────────────────────────────────
@@ -53,7 +53,7 @@ const DOC_CONFIG: Record<ClaimType, DocSpec[]> = {
 
 // ── Step indicator ────────────────────────────────────────────────────────────
 function StepBar({ current }: { current: number }) {
-    const steps = ["Consent", "Policy", "Documents", "Review", "Confirm"];
+    const steps = ["Consent", "Policy", "Documents", "Confirm"];
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 0, marginBottom: 28 }}>
             {steps.map((label, i) => {
@@ -249,6 +249,138 @@ function FileZone({
     );
 }
 
+// ── Inline OCR result card (shown below FileZone after extraction) ─────────────
+function InlineOcrCard({
+    result,
+    edits,
+    onFieldChange,
+}: {
+    result: InlineOcrResult;
+    edits: Record<string, unknown>;
+    onFieldChange: (key: string, value: string) => void;
+}) {
+    const [isEditing, setIsEditing] = useState(false);
+
+    if (!result.is_relevant) return null; // FileZone already shows the invalid banner
+
+    const entries = Object.entries(edits).filter(([, v]) => v !== null && v !== undefined && v !== "");
+    const hasMissing = result.missing_fields.length > 0;
+
+    if (entries.length === 0 && !hasMissing) {
+        return (
+            <div style={{
+                marginTop: 4, padding: "8px 12px",
+                border: "1px solid rgba(34,197,94,0.2)", borderTop: "none",
+                borderRadius: "0 0 6px 6px", background: "var(--bg-surface)",
+                fontSize: "0.6875rem", color: "var(--text-muted)",
+            }}>
+                No fields extracted — you can add them manually after upload.
+            </div>
+        );
+    }
+
+    return (
+        <div style={{
+            marginTop: 4, padding: "10px 12px",
+            border: "1px solid rgba(34,197,94,0.25)", borderTop: "none",
+            borderRadius: "0 0 6px 6px", background: "var(--bg-surface)",
+        }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: "0.6875rem", color: "var(--green)", fontWeight: 600, display: "flex", gap: 5, alignItems: "center" }}>
+                    <CheckCircle2 size={11} />
+                    {entries.length} field{entries.length !== 1 ? "s" : ""} extracted
+                    {result.completeness > 0 && (
+                        <span style={{ color: result.completeness >= 0.7 ? "var(--green)" : "#f59e0b", fontFamily: "var(--font-mono)", marginLeft: 2 }}>
+                            · {Math.round(result.completeness * 100)}% complete
+                        </span>
+                    )}
+                </span>
+                {entries.length > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => setIsEditing(!isEditing)}
+                        style={{
+                            display: "flex", gap: 4, alignItems: "center",
+                            padding: "2px 8px", borderRadius: 4,
+                            border: "1px solid var(--border)", background: "none",
+                            cursor: "pointer", fontSize: "0.625rem", color: "var(--text-muted)",
+                        }}
+                    >
+                        {isEditing ? <><X size={10} /> Done</> : <><Edit2 size={10} /> Edit</>}
+                    </button>
+                )}
+            </div>
+
+            {/* Extracted fields */}
+            {entries.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
+                    {entries.map(([k, v]) => (
+                        <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                            <span style={{
+                                fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "capitalize",
+                                flexShrink: 0, width: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>
+                                {k.replace(/_/g, " ")}
+                            </span>
+                            {isEditing ? (
+                                <input
+                                    className="input"
+                                    value={String(v ?? "")}
+                                    onChange={e => onFieldChange(k, e.target.value)}
+                                    style={{ flex: 1, fontSize: "0.6875rem", padding: "2px 6px", minWidth: 0 }}
+                                />
+                            ) : (
+                                <span style={{
+                                    fontSize: "0.6875rem", color: "var(--text-primary)",
+                                    fontFamily: "var(--font-mono)",
+                                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>
+                                    {String(v ?? "").slice(0, 40)}
+                                </span>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Missing required fields — always editable inputs */}
+            {hasMissing && (
+                <div style={{ marginTop: entries.length > 0 ? 10 : 0 }}>
+                    <div style={{
+                        fontSize: "0.625rem", color: "#f59e0b", fontWeight: 600,
+                        display: "flex", gap: 4, alignItems: "center", marginBottom: 6,
+                    }}>
+                        <AlertTriangle size={10} />
+                        Missing required fields — fill in manually:
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
+                        {result.missing_fields.map((k) => (
+                            <div key={k} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                <span style={{
+                                    fontSize: "0.625rem", color: "#f59e0b", textTransform: "capitalize",
+                                    flexShrink: 0, width: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>
+                                    {k.replace(/_/g, " ")}
+                                </span>
+                                <input
+                                    className="input"
+                                    placeholder="enter value…"
+                                    value={String(edits[k] ?? "")}
+                                    onChange={e => onFieldChange(k, e.target.value)}
+                                    style={{
+                                        flex: 1, fontSize: "0.6875rem", padding: "2px 6px", minWidth: 0,
+                                        borderColor: "rgba(245,158,11,0.5)",
+                                    }}
+                                />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function NewClaimPage() {
     return (
@@ -314,12 +446,11 @@ function WizardContent() {
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [docErrors, setDocErrors] = useState<Map<number, string>>(new Map());
 
-    // Step 3 — Pre-OCR relevance validation
-    type DocValidation = { valid: boolean; reason: string; detected_type?: string };
-    const [docValidations, setDocValidations] = useState<Map<number, DocValidation>>(new Map());
-    const [checkingDocs, setCheckingDocs] = useState<Set<number>>(new Set());
-    const [validating, setValidating] = useState(false);
-    const [validateError, setValidateError] = useState<string | null>(null);
+    // Step 3 — inline OCR (runs per-doc on file select)
+    const [docOcrResults, setDocOcrResults] = useState<Map<number, InlineOcrResult>>(new Map());
+    const [processingDocs, setProcessingDocs] = useState<Set<number>>(new Set());
+    // User-editable extracted field overrides (keyed by doc-slot index)
+    const [docFieldEdits, setDocFieldEdits] = useState<Map<number, Record<string, unknown>>>(new Map());
 
     // Step 3
     const [claimAmount, setClaimAmount] = useState("");
@@ -373,49 +504,8 @@ function WizardContent() {
     const [claimId, setClaimId] = useState<string | null>(null);
     const [resolvedPolicyNumber, setResolvedPolicyNumber] = useState<string | null>(null);
     const [uploadedDocs, setUploadedDocs] = useState<ClaimDocumentResponse[]>([]);
-    const [extracting, setExtracting] = useState(false); // true while background tasks are pending
 
-    // ── Polling for background Gemini extraction on the wizard ────────────────
-    const wizardPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    const stopWizardPoll = useCallback(() => {
-        if (wizardPollRef.current) { clearInterval(wizardPollRef.current); wizardPollRef.current = null; }
-    }, []);
-
-    useEffect(() => {
-        // Start polling when we hit step 4 and any doc is still pending
-        if (step !== 4 || !claimId) return;
-        const isPending = (d: ClaimDocumentResponse) =>
-            (d.ocr_status ?? "").toUpperCase() === "PENDING" ||
-            (d.validation_status ?? "").toUpperCase() === "PENDING";
-        const hasPending = uploadedDocs.some(isPending);
-        if (!hasPending) { setExtracting(false); return; }
-
-        setExtracting(true);
-        if (wizardPollRef.current) return; // already running
-
-        wizardPollRef.current = setInterval(async () => {
-            try {
-                const refreshed = await documentService.listClaimDocs(claimId);
-                setUploadedDocs(refreshed);
-                const stillPending = refreshed.some(isPending);
-                if (!stillPending) {
-                    setExtracting(false);
-                    stopWizardPoll();
-                    // Pre-fill amount now that extraction is done
-                    const extracted = getExtractedAmount(refreshed);
-                    if (extracted) setClaimAmount(extracted);
-                }
-            } catch { /* ignore transient poll errors */ }
-        }, 2000);
-
-        return () => stopWizardPoll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [step, claimId, uploadedDocs.map(d => d.validation_status).join(",")]);
-
-    useEffect(() => () => stopWizardPoll(), [stopWizardPoll]);
-
-    // Step 5
+    // Step 4 (Confirm + Submit)
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
@@ -469,73 +559,44 @@ function WizardContent() {
         }
     }
 
-    // ── Validate a single doc immediately on file select ─────────────────────
-    const validateSingleDoc = useCallback(async (idx: number, file: File, ct: ClaimType, specList: DocSpec[]) => {
+    // ── Run inline OCR per doc immediately on file select ────────────────────
+    const runInlineOcr = useCallback(async (idx: number, file: File, ct: ClaimType, specList: DocSpec[]) => {
         const spec = specList[idx];
         if (!spec) return;
-        setCheckingDocs((prev) => new Set(prev).add(idx));
+        setProcessingDocs((prev) => new Set(prev).add(idx));
         try {
-            const result = await documentService.validateDocRelevance(
+            const result = await documentService.inlineOcr(
                 file,
                 spec.document_type_code ?? spec.type,
                 ct,
+                spec.requirement_id,
             );
-            setDocValidations((prev) => new Map(prev).set(idx, {
-                valid: result.is_relevant,
-                reason: result.reason,
-                detected_type: result.detected_type,
-            }));
+            setDocOcrResults((prev) => new Map(prev).set(idx, result));
+            // Seed editable fields from OCR result
+            setDocFieldEdits((prev) => new Map(prev).set(idx, { ...result.extracted_fields }));
+            // Auto-prefill amount from first document that has a total_amount
+            const rawAmt = result.extracted_fields.total_amount;
+            if (rawAmt) {
+                const val = parseFloat(String(rawAmt).replace(/[^0-9.]/g, ""));
+                if (!isNaN(val) && val > 0) setClaimAmount((prev) => prev || String(val));
+            }
         } catch {
-            setDocValidations((prev) => new Map(prev).set(idx, {
-                valid: true,
+            // Network error — be lenient, accept for manual review
+            const fallback: InlineOcrResult = {
+                is_relevant: true,
                 reason: "Could not verify automatically — accepted for manual review.",
                 detected_type: spec.document_type_code ?? spec.type,
-            }));
+                extracted_fields: {},
+                completeness: 0,
+                missing_fields: [],
+            };
+            setDocOcrResults((prev) => new Map(prev).set(idx, fallback));
+            setDocFieldEdits((prev) => new Map(prev).set(idx, {}));
         } finally {
-            setCheckingDocs((prev) => { const next = new Set(prev); next.delete(idx); return next; });
+            setProcessingDocs((prev) => { const next = new Set(prev); next.delete(idx); return next; });
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    // ── Re-check all uploaded docs in parallel ────────────────────────────────
-    async function handleValidateDocs() {
-        if (!claimType) return;
-        setValidating(true);
-        setValidateError(null);
-        setCheckingDocs(new Set(files.keys()));
-        try {
-            await Promise.all(
-                [...files.entries()].map(async ([idx, file]) => {
-                    const spec = specs[idx];
-                    try {
-                        const result = await documentService.validateDocRelevance(
-                            file,
-                            spec.document_type_code ?? spec.type,
-                            claimType,
-                        );
-                        setDocValidations((prev) => new Map(prev).set(idx, {
-                            valid: result.is_relevant,
-                            reason: result.reason,
-                            detected_type: result.detected_type,
-                        }));
-                    } catch {
-                        setDocValidations((prev) => new Map(prev).set(idx, {
-                            valid: true,
-                            reason: "Could not verify automatically — accepted for manual review.",
-                            detected_type: spec.document_type_code ?? spec.type,
-                        }));
-                    } finally {
-                        setCheckingDocs((prev) => { const next = new Set(prev); next.delete(idx); return next; });
-                    }
-                })
-            );
-        } catch {
-            setValidateError("Validation failed — please try again.");
-        } finally {
-            setCheckingDocs(new Set());
-            setValidating(false);
-        }
-    }
 
     async function handleUpload() {
         if (!claimType) return;
@@ -550,7 +611,7 @@ function WizardContent() {
         setDocErrors(new Map());
         setUploading(true);
         try {
-            // Create placeholder claim — policy is resolved server-side by claim_type
+            // Create claim first
             const claim = await claimService.create({
                 claim_type: claimType,
                 claim_amount: 1.0,
@@ -558,28 +619,27 @@ function WizardContent() {
             setClaimId(claim.id);
             setResolvedPolicyNumber(claim.policy_number);
 
-            // Upload documents — collect per-doc validation errors separately
+            // Upload each doc with its pre-extracted data (or raw if OCR failed/skipped)
             const results: ClaimDocumentResponse[] = [];
             const newDocErrors = new Map<number, string>();
             for (const [idx, file] of files.entries()) {
                 const spec = specs[idx];
+                const precomputed = docFieldEdits.get(idx) ?? docOcrResults.get(idx)?.extracted_fields;
                 try {
-                    // Use template-aware ClaimDocument upload
                     const doc = await documentService.uploadClaimDoc(
                         claim.id,
                         file,
                         spec.document_type_code ?? spec.type,
                         spec.requirement_id,
+                        precomputed && Object.keys(precomputed).length > 0 ? precomputed : undefined,
                     );
                     results.push(doc);
                 } catch (err) {
-                    // Extract the backend detail for 400 validation errors
                     const axErr = err as { response?: { status?: number; data?: { detail?: string; error_code?: string } } };
                     if (axErr.response?.status === 400) {
                         const reason = axErr.response?.data?.detail ?? "This document appears to be incorrect.";
                         newDocErrors.set(idx, reason);
                     } else {
-                        // Unexpected system error — surface normally
                         throw err;
                     }
                 }
@@ -587,15 +647,16 @@ function WizardContent() {
 
             if (newDocErrors.size > 0) {
                 setDocErrors(newDocErrors);
-                // Don't advance — let user fix the flagged documents
                 return;
             }
 
             setUploadedDocs(results);
 
-            // Pre-fill amount from OCR
-            const extracted = getExtractedAmount(results);
-            if (extracted) setClaimAmount(extracted);
+            // Pre-fill amount if not already set from inline OCR
+            if (!claimAmount) {
+                const extracted = getExtractedAmount(results);
+                if (extracted) setClaimAmount(extracted);
+            }
 
             setStep(4);
         } catch (err: unknown) {
@@ -689,7 +750,7 @@ function WizardContent() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <FileText size={15} color="var(--text-muted)" />
                 <span style={{ fontSize: "0.875rem", fontWeight: 600 }}>New Claim</span>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Step {step} of 5</span>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Step {step} of 4</span>
             </div>
         }>
             <div style={{ maxWidth: 600, margin: "0 auto", padding: "24px 0" }}>
@@ -756,8 +817,24 @@ function WizardContent() {
                             />
                             <span>
                                 I have read and agree to the{" "}
-                                <a href="#" style={{ color: "var(--blue)" }}>Terms &amp; Conditions</a>{" "}and{" "}
-                                <a href="#" style={{ color: "var(--blue)" }}>Privacy Policy</a>.
+                                <a
+                                    href="/terms"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ color: "var(--blue)", textDecoration: "underline" }}
+                                >
+                                    Terms &amp; Conditions
+                                </a>
+                                {" "}and{" "}
+                                <a
+                                    href="/privacy"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ color: "var(--blue)", textDecoration: "underline" }}
+                                >
+                                    Privacy Policy
+                                </a>
+                                , including collection and processing of my health and financial data for claim evaluation.
                             </span>
                         </label>
 
@@ -911,302 +988,178 @@ function WizardContent() {
                     </div>
                 )}
 
-                {/* ── Step 3: Policy + documents ──────────────────────────── */}
+                {/* ── Step 3: Documents + inline OCR ──────────────────────── */}
                 {step === 3 && claimType && (() => {
                     const allRequiredHaveFiles = specs.every((spec, idx) => !spec.required || files.has(idx));
-                    const allFilesValidated = files.size > 0 && [...files.keys()].every(idx => docValidations.has(idx));
-                    const hasInvalidDocs = allFilesValidated && [...docValidations.values()].some(v => !v.valid);
-                    const allValidPass = allFilesValidated && [...docValidations.values()].every(v => v.valid);
-                    const canUpload = allRequiredHaveFiles && allValidPass;
+                    const anyProcessing = processingDocs.size > 0;
+                    const hasInvalidDocs = [...docOcrResults.values()].some(r => !r.is_relevant);
+                    const canUpload = allRequiredHaveFiles && !anyProcessing && !hasInvalidDocs;
                     return (
-                    <div>
-                        <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>
-                            {(claimType && TYPE_META[claimType as keyof typeof TYPE_META]?.title) ?? claimType ?? "Claim"} — Documents
-                        </h2>
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
-                            Upload supporting documents. Required fields are marked with *. Each document is automatically checked for relevance as you upload it.
-                        </p>
+                        <div>
+                            <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>
+                                {TYPE_META[claimType as keyof typeof TYPE_META]?.title ?? claimType} — Documents
+                            </h2>
+                            <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
+                                Upload supporting documents. Each file is immediately extracted and verified by AI — you can review and edit the data before saving.
+                            </p>
 
-                        {/* File upload areas */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-                            {specs.map((spec, idx) => (
-                                <FileZone
-                                    key={idx}
-                                    spec={spec}
-                                    file={files.get(idx)}
-                                    validationError={docErrors.get(idx) ?? null}
-                                    validationResult={docValidations.get(idx) ?? null}
-                                    checking={checkingDocs.has(idx)}
-                                    onResubmit={() => {
-                                        setFiles((prev) => {
-                                            const next = new Map(prev);
-                                            next.delete(idx);
-                                            return next;
-                                        });
-                                        setDocValidations((prev) => {
-                                            const next = new Map(prev);
-                                            next.delete(idx);
-                                            return next;
-                                        });
-                                        setDocErrors((prev) => {
-                                            const next = new Map(prev);
-                                            next.delete(idx);
-                                            return next;
-                                        });
-                                    }}
-                                    onChange={(f) => {
-                                        setFiles((prev) => {
-                                            const next = new Map(prev);
-                                            if (f) next.set(idx, f); else next.delete(idx);
-                                            return next;
-                                        });
-                                        setDocErrors((prev) => {
-                                            const next = new Map(prev);
-                                            next.delete(idx);
-                                            return next;
-                                        });
-                                        // Clear old validation then immediately re-validate the new file
-                                        setDocValidations((prev) => {
-                                            const next = new Map(prev);
-                                            next.delete(idx);
-                                            return next;
-                                        });
-                                        if (f && claimType) validateSingleDoc(idx, f, claimType, specs);
-                                    }}
-                                />
-                            ))}
-                        </div>
-
-                        {/* Validation summary banners */}
-                        {hasInvalidDocs && (
-                            <div style={{
-                                display: "flex", gap: 8, alignItems: "center",
-                                padding: "10px 12px", borderRadius: 6, marginBottom: 12,
-                                background: "rgba(239,68,68,0.07)",
-                                border: "1px solid rgba(239,68,68,0.4)",
-                                fontSize: "0.75rem", color: "var(--red, #ef4444)", fontWeight: 500,
-                            }}>
-                                <AlertCircle size={14} />
-                                {[...docValidations.values()].filter(v => !v.valid).length === 1
-                                    ? "1 document is invalid"
-                                    : `${[...docValidations.values()].filter(v => !v.valid).length} documents are invalid`
-                                } — remove the flagged documents and resubmit the correct insurance documents.
-                            </div>
-                        )}
-                        {allValidPass && files.size > 0 && (
-                            <div style={{
-                                display: "flex", gap: 8, alignItems: "center",
-                                padding: "10px 12px", borderRadius: 6, marginBottom: 12,
-                                background: "rgba(34,197,94,0.07)",
-                                border: "1px solid rgba(34,197,94,0.35)",
-                                fontSize: "0.75rem", color: "var(--green)", fontWeight: 500,
-                            }}>
-                                <CheckCircle2 size={14} />
-                                All documents verified as relevant — you can now proceed with OCR processing.
-                            </div>
-                        )}
-                        {docErrors.size > 0 && (
-                            <div style={{
-                                display: "flex", gap: 8, alignItems: "center",
-                                padding: "8px 12px", borderRadius: 6, marginBottom: 12,
-                                background: "rgba(245,158,11,0.08)",
-                                border: "1px solid rgba(245,158,11,0.35)",
-                                fontSize: "0.75rem", color: "#f59e0b", fontWeight: 500,
-                            }}>
-                                <AlertTriangle size={14} />
-                                {docErrors.size === 1 ? "1 document" : `${docErrors.size} documents`} could not be validated — see details above and re-upload the correct files.
-                            </div>
-                        )}
-                        {uploadError && (
-                            <div style={{ color: "var(--red, #ef4444)", fontSize: "0.75rem", marginBottom: 12 }}>
-                                {uploadError}
-                            </div>
-                        )}
-                        {validateError && (
-                            <div style={{ color: "var(--red, #ef4444)", fontSize: "0.75rem", marginBottom: 12 }}>
-                                {validateError}
-                            </div>
-                        )}
-
-                        <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn btn-ghost" onClick={() => setStep(2)}>
-                                <ChevronLeft size={14} /> Back
-                            </button>
-
-                            {/* Re-check all in parallel (e.g. after network error) */}
-                            {!validating && allFilesValidated && hasInvalidDocs && (
-                                <button
-                                    className="btn btn-secondary"
-                                    onClick={handleValidateDocs}
-                                    style={{ flex: 1, background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
-                                >
-                                    <Shield size={14} /> Re-check All
-                                </button>
-                            )}
-
-                            {/* Validating spinner */}
-                            {validating && (
-                                <button className="btn btn-secondary" disabled style={{ flex: 1, border: "1px solid var(--border)" }}>
-                                    <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Checking documents…
-                                </button>
-                            )}
-
-                            {/* Upload & OCR — only after all docs pass validation */}
-                            {canUpload && (
-                                <button
-                                    className="btn btn-primary"
-                                    disabled={uploading}
-                                    onClick={handleUpload}
-                                    style={{ flex: 1 }}
-                                >
-                                    {uploading ? (
-                                        <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Uploading…</>
-                                    ) : (
-                                        <>Upload &amp; Run OCR <ChevronRight size={14} /></>
-                                    )}
-                                </button>
-                            )}
-
-                            {/* Blocked state — invalid docs present */}
-                            {hasInvalidDocs && (
-                                <button className="btn btn-primary" disabled style={{ flex: 1, opacity: 0.5 }}>
-                                    Fix invalid documents first <AlertCircle size={14} />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    );
-                })()}
-
-                {/* ── Step 4: OCR review ──────────────────────────────────── */}
-                {step === 4 && (
-                    <div>
-                        <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>Review extracted data</h2>
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
-                            {extracting ? "AI is reading your documents — this takes about 20–40 s…" : "Documents processed. Verify or correct the details below."}
-                        </p>
-
-                        {/* OCR extractions */}
-                        {uploadedDocs.length > 0 && (
-                            <div style={{ marginBottom: 20 }}>
-                                {uploadedDocs.map((doc) => {
-                                    const isPending = (doc.ocr_status ?? "").toUpperCase() === "PENDING"
-                                        || (doc.validation_status ?? "").toUpperCase() === "PENDING";
-                                    const docStatus = (doc.validation_status ?? "").toUpperCase();
-                                    // REJECTED = wrong document type (irrelevant/non-insurance) — hard block
-                                    const isInvalid = docStatus === "REJECTED";
-                                    // FLAGGED / NEEDS_RESUBMISSION = right type but issues — soft warning
-                                    const isWarning = ["FLAGGED", "NEEDS_RESUBMISSION"].includes(docStatus);
-                                    const isRejected = isInvalid || isWarning;
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 20 }}>
+                                {specs.map((spec, idx) => {
+                                    const ocrResult = docOcrResults.get(idx) ?? null;
+                                    const isProcessing = processingDocs.has(idx);
+                                    const validationResult = ocrResult
+                                        ? { valid: ocrResult.is_relevant, reason: ocrResult.reason, detected_type: ocrResult.detected_type }
+                                        : null;
                                     return (
-                                        <div key={doc.id} style={{
-                                            border: `1px solid ${isInvalid ? "rgba(239,68,68,0.5)" : isWarning ? "rgba(245,158,11,0.45)" : "var(--border)"}`,
-                                            borderRadius: 6,
-                                            padding: "10px 14px", marginBottom: 8,
-                                            background: isInvalid ? "rgba(239,68,68,0.05)" : isWarning ? "rgba(245,158,11,0.04)" : "var(--bg-surface)",
-                                        }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                                                <FileText size={13} color={isInvalid ? "var(--red, #ef4444)" : "var(--text-muted)"} />
-                                                <span style={{ fontSize: "0.75rem", fontWeight: 500 }}>{doc.original_filename ?? doc.document_type}</span>
-                                                {isPending ? (
-                                                    <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: "0.625rem", color: "var(--blue)", fontFamily: "var(--font-mono)" }}>
-                                                        <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> extracting…
-                                                    </span>
-                                                ) : isInvalid ? (
-                                                    <span style={{
-                                                        marginLeft: "auto", fontSize: "0.625rem", fontWeight: 700,
-                                                        color: "var(--red, #ef4444)", fontFamily: "var(--font-mono)",
-                                                        background: "rgba(239,68,68,0.1)", padding: "2px 7px", borderRadius: 4,
-                                                    }}>
-                                                        INVALID DOCUMENT
-                                                    </span>
-                                                ) : doc.extraction_confidence !== null ? (
-                                                    <span style={{
-                                                        marginLeft: "auto", fontSize: "0.625rem",
-                                                        color: (doc.extraction_confidence ?? 0) >= 0.7 ? "var(--green)" : "var(--amber)",
-                                                        fontFamily: "var(--font-mono)",
-                                                    }}>
-                                                        {Math.round((doc.extraction_confidence ?? 0) * 100)}% confidence
-                                                    </span>
-                                                ) : null}
-                                            </div>
-
-                                            {isPending ? (
-                                                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                                                    {[80, 60, 70].map((w, i) => (
-                                                        <div key={i} className="skeleton" style={{ height: 10, width: `${w}%` }} />
+                                        <div key={idx} style={{ marginBottom: 8 }}>
+                                            <FileZone
+                                                spec={spec}
+                                                file={files.get(idx)}
+                                                validationError={docErrors.get(idx) ?? null}
+                                                validationResult={validationResult}
+                                                checking={isProcessing}
+                                                onResubmit={() => {
+                                                    setFiles(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    setDocOcrResults(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    setDocFieldEdits(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    setDocErrors(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                }}
+                                                onChange={(f) => {
+                                                    setFiles(prev => { const n = new Map(prev); if (f) n.set(idx, f); else n.delete(idx); return n; });
+                                                    setDocErrors(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    setDocOcrResults(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    setDocFieldEdits(prev => { const n = new Map(prev); n.delete(idx); return n; });
+                                                    if (f && claimType) runInlineOcr(idx, f, claimType, specs);
+                                                }}
+                                            />
+                                            {/* Spinner while OCR runs */}
+                                            {isProcessing && (
+                                                <div style={{
+                                                    marginTop: 4, padding: "10px 12px",
+                                                    border: "1px solid var(--border)", borderTop: "none",
+                                                    borderRadius: "0 0 6px 6px", background: "var(--bg-surface)",
+                                                }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.6875rem", color: "var(--blue)", marginBottom: 8 }}>
+                                                        <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                                                        Extracting fields with AI…
+                                                    </div>
+                                                    {[70, 50, 80].map((w, i) => (
+                                                        <div key={i} className="skeleton" style={{ height: 9, width: `${w}%`, marginBottom: 5 }} />
                                                     ))}
                                                 </div>
-                                            ) : (
-                                                <>
-                                                    {/* Invalid document — hard block with red UI */}
-                                                    {isInvalid && (
-                                                        <div style={{
-                                                            display: "flex", gap: 8, alignItems: "flex-start",
-                                                            padding: "10px 12px", marginBottom: 8,
-                                                            background: "rgba(239,68,68,0.07)",
-                                                            border: "1px solid rgba(239,68,68,0.35)",
-                                                            borderRadius: 6,
-                                                        }}>
-                                                            <AlertCircle size={14} color="var(--red, #ef4444)" style={{ flexShrink: 0, marginTop: 1 }} />
-                                                            <div style={{ fontSize: "0.6875rem", lineHeight: 1.6 }}>
-                                                                <div style={{ fontWeight: 700, color: "var(--red, #ef4444)", marginBottom: 2 }}>Invalid document — not accepted</div>
-                                                                <div style={{ color: "var(--text-primary)" }}>{doc.validation_reason ?? "This document does not match the required type for this claim."}</div>
-                                                                <div style={{ color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
-                                                                    Please go back and upload the correct insurance document for this slot.
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                            )}
+                                            {/* Inline OCR result card — editable */}
+                                            {!isProcessing && ocrResult && (
+                                                <InlineOcrCard
+                                                    result={ocrResult}
+                                                    edits={docFieldEdits.get(idx) ?? ocrResult.extracted_fields}
+                                                    onFieldChange={(k, v) => setDocFieldEdits(prev =>
+                                                        new Map(prev).set(idx, { ...(prev.get(idx) ?? ocrResult.extracted_fields), [k]: v })
                                                     )}
-                                                    {/* Soft warning — missing fields / flagged but right type */}
-                                                    {isWarning && doc.validation_reason && (
-                                                        <div style={{
-                                                            display: "flex", gap: 8, alignItems: "flex-start",
-                                                            padding: "8px 10px", marginBottom: 8,
-                                                            background: "rgba(245,158,11,0.08)",
-                                                            border: "1px solid rgba(245,158,11,0.3)",
-                                                            borderRadius: 6,
-                                                        }}>
-                                                            <AlertTriangle size={12} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
-                                                            <div style={{ fontSize: "0.6875rem", lineHeight: 1.5 }}>
-                                                                <span style={{ fontWeight: 600, color: "#f59e0b" }}>{doc.validation_status}: </span>
-                                                                <span style={{ color: "var(--text-primary)" }}>{doc.validation_reason}</span>
-                                                                {doc.missing_fields && doc.missing_fields.length > 0 && (
-                                                                    <div style={{ color: "var(--text-muted)", marginTop: 2 }}>
-                                                                        Missing fields: {doc.missing_fields.join(", ")}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {/* Promoted summary row */}
-                                                    {(doc.patient_name || doc.hospital_name || doc.total_amount) && (
-                                                        <div style={{
-                                                            display: "flex", gap: 12, flexWrap: "wrap",
-                                                            padding: "6px 0", marginBottom: 6,
-                                                            borderBottom: "1px solid var(--border)",
-                                                            fontSize: "0.6875rem",
-                                                        }}>
-                                                            {doc.patient_name && <span><span style={{ color: "var(--text-muted)" }}>Patient: </span>{doc.patient_name}</span>}
-                                                            {doc.hospital_name && <span><span style={{ color: "var(--text-muted)" }}>Hospital: </span>{doc.hospital_name}</span>}
-                                                            {doc.total_amount && <span style={{ fontWeight: 600 }}>₹{Number(doc.total_amount).toLocaleString("en-IN")}</span>}
-                                                            {doc.entity_gstin && <span><span style={{ color: "var(--text-muted)" }}>GSTIN: </span>{doc.entity_gstin}</span>}
-                                                        </div>
-                                                    )}
-                                                    <EditableExtractedData
-                                                        document={doc}
-                                                        onUpdate={(updated) => setUploadedDocs((prev) => prev.map((d) => d.id === updated.id ? { ...d, ...updated } as ClaimDocumentResponse : d))}
-                                                        onError={() => {}}
-                                                    />
-                                                </>
+                                                />
                                             )}
                                         </div>
                                     );
                                 })}
                             </div>
-                        )}
 
-                        {/* Amount + description */}
+                            {/* Summary banners */}
+                            {hasInvalidDocs && (
+                                <div style={{
+                                    display: "flex", gap: 8, alignItems: "center",
+                                    padding: "10px 12px", borderRadius: 6, marginBottom: 12,
+                                    background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.4)",
+                                    fontSize: "0.75rem", color: "var(--red, #ef4444)", fontWeight: 500,
+                                }}>
+                                    <AlertCircle size={14} />
+                                    {[...docOcrResults.values()].filter(r => !r.is_relevant).length === 1
+                                        ? "1 document is invalid"
+                                        : `${[...docOcrResults.values()].filter(r => !r.is_relevant).length} documents are invalid`
+                                    } — remove the flagged files and upload the correct insurance documents.
+                                </div>
+                            )}
+                            {anyProcessing && (
+                                <div style={{
+                                    display: "flex", gap: 8, alignItems: "center",
+                                    padding: "10px 12px", borderRadius: 6, marginBottom: 12,
+                                    background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.3)",
+                                    fontSize: "0.75rem", color: "var(--blue)", fontWeight: 500,
+                                }}>
+                                    <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+                                    AI is extracting data from your documents…
+                                </div>
+                            )}
+                            {!anyProcessing && canUpload && files.size > 0 && (
+                                <div style={{
+                                    display: "flex", gap: 8, alignItems: "center",
+                                    padding: "10px 12px", borderRadius: 6, marginBottom: 12,
+                                    background: "rgba(34,197,94,0.07)", border: "1px solid rgba(34,197,94,0.35)",
+                                    fontSize: "0.75rem", color: "var(--green)", fontWeight: 500,
+                                }}>
+                                    <CheckCircle2 size={14} />
+                                    All documents ready — review the extracted data above, then click Save &amp; Continue.
+                                </div>
+                            )}
+                            {docErrors.size > 0 && (
+                                <div style={{
+                                    display: "flex", gap: 8, alignItems: "center",
+                                    padding: "8px 12px", borderRadius: 6, marginBottom: 12,
+                                    background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)",
+                                    fontSize: "0.75rem", color: "#f59e0b", fontWeight: 500,
+                                }}>
+                                    <AlertTriangle size={14} />
+                                    {docErrors.size === 1 ? "1 document" : `${docErrors.size} documents`} failed server validation — see details above.
+                                </div>
+                            )}
+                            {uploadError && (
+                                <div style={{ color: "var(--red, #ef4444)", fontSize: "0.75rem", marginBottom: 12 }}>
+                                    {uploadError}
+                                </div>
+                            )}
+
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <button className="btn btn-ghost" onClick={() => setStep(2)}>
+                                    <ChevronLeft size={14} /> Back
+                                </button>
+                                {anyProcessing && (
+                                    <button className="btn btn-primary" disabled style={{ flex: 1 }}>
+                                        <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Extracting…
+                                    </button>
+                                )}
+                                {!anyProcessing && hasInvalidDocs && (
+                                    <button className="btn btn-primary" disabled style={{ flex: 1, opacity: 0.5 }}>
+                                        Fix invalid documents first <AlertCircle size={14} />
+                                    </button>
+                                )}
+                                {!anyProcessing && !hasInvalidDocs && (
+                                    <button
+                                        className="btn btn-primary"
+                                        disabled={uploading || !allRequiredHaveFiles}
+                                        onClick={handleUpload}
+                                        style={{ flex: 1 }}
+                                        title={!allRequiredHaveFiles ? "Upload all required documents first" : undefined}
+                                    >
+                                        {uploading ? (
+                                            <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Uploading…</>
+                                        ) : (
+                                            <>Save &amp; Continue <ChevronRight size={14} /></>
+                                        )}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* ── Step 4: Confirm + submit ─────────────────────────────── */}
+                {step === 4 && claimType && (
+                    <div>
+                        <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>Confirm your claim</h2>
+                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
+                            Review the details below before submitting.
+                        </p>
+
+                        {/* Amount + description — pre-filled from inline OCR, editable here */}
                         <div style={{ marginBottom: 14 }}>
                             <label style={{ fontSize: "0.75rem", fontWeight: 500, display: "block", marginBottom: 4 }}>
                                 Claim Amount (₹) <span style={{ color: "var(--red, #ef4444)" }}>*</span>
@@ -1268,62 +1221,6 @@ function WizardContent() {
                             />
                         </div>
 
-                        {/* Invalid-doc blocking banner */}
-                        {!extracting && uploadedDocs.some(d => (d.validation_status ?? "").toUpperCase() === "REJECTED") && (
-                            <div style={{
-                                display: "flex", gap: 10, alignItems: "flex-start",
-                                padding: "12px 14px", borderRadius: 8, marginBottom: 16,
-                                background: "rgba(239,68,68,0.07)",
-                                border: "1px solid rgba(239,68,68,0.4)",
-                                fontSize: "0.8125rem",
-                            }}>
-                                <AlertCircle size={16} color="var(--red, #ef4444)" style={{ flexShrink: 0, marginTop: 1 }} />
-                                <div>
-                                    <div style={{ fontWeight: 700, color: "var(--red, #ef4444)", marginBottom: 3 }}>
-                                        {uploadedDocs.filter(d => (d.validation_status ?? "").toUpperCase() === "REJECTED").length === 1
-                                            ? "1 invalid document detected"
-                                            : `${uploadedDocs.filter(d => (d.validation_status ?? "").toUpperCase() === "REJECTED").length} invalid documents detected`
-                                        }
-                                    </div>
-                                    <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", lineHeight: 1.6 }}>
-                                        The highlighted document(s) are not valid insurance documents for this claim type.
-                                        Please go back and replace them with the correct files before you can proceed.
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn btn-ghost" onClick={() => setStep(3)}>
-                                <ChevronLeft size={14} /> Back
-                            </button>
-                            <button
-                                className="btn btn-primary"
-                                disabled={!claimAmount || extracting || uploadedDocs.some(d => (d.validation_status ?? "").toUpperCase() === "REJECTED")}
-                                onClick={() => setStep(5)}
-                                style={{ flex: 1 }}
-                                title={uploadedDocs.some(d => (d.validation_status ?? "").toUpperCase() === "REJECTED") ? "Fix invalid documents before proceeding" : undefined}
-                            >
-                                {extracting ? (
-                                    <><Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> Extracting…</>
-                                ) : uploadedDocs.some(d => (d.validation_status ?? "").toUpperCase() === "REJECTED") ? (
-                                    <>Fix Invalid Documents First <AlertCircle size={14} /></>
-                                ) : (
-                                    <>Review &amp; Confirm <ChevronRight size={14} /></>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* ── Step 5: Confirm ─────────────────────────────────────── */}
-                {step === 5 && claimType && (
-                    <div>
-                        <h2 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: 6 }}>Confirm your claim</h2>
-                        <p style={{ color: "var(--text-muted)", fontSize: "0.8125rem", marginBottom: 20 }}>
-                            Review the details below before submitting.
-                        </p>
-
                         <div style={{
                             border: "1px solid var(--border)", borderRadius: 8,
                             overflow: "hidden", marginBottom: 20,
@@ -1353,7 +1250,7 @@ function WizardContent() {
                         )}
 
                         <div style={{ display: "flex", gap: 8 }}>
-                            <button className="btn btn-ghost" onClick={() => setStep(4)}>
+                            <button className="btn btn-ghost" onClick={() => setStep(3)}>
                                 <ChevronLeft size={14} /> Back
                             </button>
                             <button

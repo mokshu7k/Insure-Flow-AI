@@ -24,6 +24,7 @@ from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
 from app.models.claim import Claim
 from app.models.insurer import Insurer
+from app.models.kyc_document import KYCDocument
 from app.models.policy import Policy
 from app.models.policy_type import PolicyType
 from app.models.document_requirement import DocumentRequirement
@@ -274,69 +275,291 @@ AMBULANCE_RECEIPT_RULES = {"rules": [
     {"field": "amount", "check": "range", "min": 100, "max": 100000, "message": "Amount seems unusual for ambulance"},
 ]}
 
-HEALTH_DOCUMENT_REQUIREMENTS = [
-    # ── COMPULSORY ──
-    {"document_type_code": "AADHAAR", "display_name": "Aadhaar Card", "is_compulsory": True,
-     "extraction_template": AADHAAR_TEMPLATE, "validation_rules": AADHAAR_RULES,
-     "description": "Government-issued Aadhaar for identity verification",
-     "instructions": "Upload front side with photo. Masked Aadhaar accepted.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "image/webp", "application/pdf"], "max_file_size_mb": 10, "sort_order": 1},
-    {"document_type_code": "PAN", "display_name": "PAN Card", "is_compulsory": True,
-     "extraction_template": PAN_TEMPLATE, "validation_rules": PAN_RULES,
-     "description": "PAN card for identity and tax verification",
-     "instructions": "Upload front side with photo visible.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "image/webp", "application/pdf"], "max_file_size_mb": 10, "sort_order": 2},
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  MOTOR DOCUMENT EXTRACTION TEMPLATES
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DRIVING_LICENSE_TEMPLATE = {
+    "fields": [
+        {"key": "dl_number", "type": "string", "required": True, "label": "DL Number"},
+        {"key": "full_name", "type": "string", "required": True, "label": "Holder Name"},
+        {"key": "date_of_birth", "type": "date", "required": True, "label": "Date of Birth"},
+        {"key": "date_of_issue", "type": "date", "required": True, "label": "Date of Issue"},
+        {"key": "validity_nontr", "type": "date", "required": True, "label": "Valid Till (Non-Transport)"},
+        {"key": "vehicle_classes", "type": "array_of_strings", "required": True, "label": "Authorised Vehicle Classes"},
+        {"key": "issuing_rto", "type": "string", "required": True, "label": "Issuing RTO"},
+        {"key": "address", "type": "string", "required": False, "label": "Address"},
+    ],
+    "instructions": (
+        "Extract DL number exactly as printed (e.g. MH1220230012345). "
+        "List all vehicle classes (LMV, MCWG, etc.). Validity date for non-transport use. "
+        "If DL is expired, still extract dates."
+    ),
+}
+DL_RULES = {"rules": [
+    {"field": "dl_number", "check": "not_empty", "message": "DL number is required"},
+    {"field": "date_of_birth", "check": "date_not_future", "message": "DOB cannot be future"},
+]}
+
+VEHICLE_RC_TEMPLATE = {
+    "fields": [
+        {"key": "registration_number", "type": "string", "required": True, "label": "Vehicle Registration Number"},
+        {"key": "owner_name", "type": "string", "required": True, "label": "Registered Owner Name"},
+        {"key": "make_model", "type": "string", "required": True, "label": "Vehicle Make & Model"},
+        {"key": "engine_number", "type": "string", "required": False, "label": "Engine Number"},
+        {"key": "chassis_number", "type": "string", "required": False, "label": "Chassis Number"},
+        {"key": "fuel_type", "type": "string", "required": False, "label": "Fuel Type"},
+        {"key": "registration_date", "type": "date", "required": True, "label": "Date of Registration"},
+        {"key": "fitness_upto", "type": "date", "required": False, "label": "Fitness Valid Upto"},
+        {"key": "rto_name", "type": "string", "required": False, "label": "Registering RTO"},
+    ],
+    "instructions": (
+        "Extract the registration number exactly (e.g. MH12AB1234). "
+        "Owner name must match policy holder. Engine and chassis are critical for fraud detection."
+    ),
+}
+VEHICLE_RC_RULES = {"rules": [
+    {"field": "registration_number", "check": "not_empty", "message": "Registration number is required"},
+    {"field": "registration_date", "check": "date_not_future", "message": "Registration date cannot be future"},
+]}
+
+REPAIR_ESTIMATE_TEMPLATE = {
+    "fields": [
+        {"key": "workshop_name", "type": "string", "required": True, "label": "Workshop / Garage Name"},
+        {"key": "workshop_address", "type": "string", "required": True, "label": "Workshop Address"},
+        {"key": "vehicle_registration", "type": "string", "required": True, "label": "Vehicle Registration Number"},
+        {"key": "estimate_number", "type": "string", "required": True, "label": "Estimate Number"},
+        {"key": "estimate_date", "type": "date", "required": True, "label": "Estimate Date"},
+        {"key": "damage_description", "type": "string", "required": True, "label": "Damage Description"},
+        {"key": "parts", "type": "array", "required": False, "label": "Parts to be Replaced",
+         "item_fields": [{"key": "part_name", "type": "string"}, {"key": "quantity", "type": "number"}, {"key": "rate", "type": "number"}, {"key": "amount", "type": "number"}]},
+        {"key": "labour_charges", "type": "number", "required": False, "label": "Labour Charges (₹)"},
+        {"key": "total_estimate", "type": "number", "required": True, "label": "Total Repair Estimate (₹)"},
+    ],
+    "instructions": (
+        "Extract vehicle registration and match against claim. "
+        "List all parts with individual costs. Labour charges separate from parts. "
+        "Total must equal parts + labour."
+    ),
+}
+REPAIR_ESTIMATE_RULES = {"rules": [
+    {"field": "vehicle_registration", "check": "not_empty", "message": "Vehicle registration is required"},
+    {"field": "estimate_date", "check": "date_not_future", "message": "Estimate date cannot be future"},
+    {"field": "total_estimate", "check": "range", "min": 500, "max": 10000000, "message": "Estimate amount out of range"},
+]}
+
+MOTOR_CLAIM_FORM_TEMPLATE = {
+    "fields": [
+        {"key": "policy_number", "type": "string", "required": True, "label": "Policy Number"},
+        {"key": "insured_name", "type": "string", "required": True, "label": "Name of Insured"},
+        {"key": "vehicle_registration", "type": "string", "required": True, "label": "Vehicle Registration Number"},
+        {"key": "incident_date", "type": "date", "required": True, "label": "Date of Incident"},
+        {"key": "incident_location", "type": "string", "required": True, "label": "Location of Incident"},
+        {"key": "incident_description", "type": "string", "required": True, "label": "Description of Incident"},
+        {"key": "estimated_loss", "type": "number", "required": False, "label": "Estimated Loss Amount (₹)"},
+        {"key": "driver_name", "type": "string", "required": True, "label": "Driver Name at Time of Incident"},
+        {"key": "insured_signature_present", "type": "boolean", "required": True, "label": "Insured Signature Present?"},
+    ],
+    "instructions": "Extract incident details clearly. Driver name is critical — must match DL.",
+}
+MOTOR_CLAIM_FORM_RULES = {"rules": [
+    {"field": "incident_date", "check": "date_not_future", "message": "Incident date cannot be future"},
+    {"field": "insured_signature_present", "check": "equals", "value": True, "message": "Insured signature required"},
+]}
+
+OPD_CLAIM_FORM_TEMPLATE = {
+    "fields": [
+        {"key": "patient_name", "type": "string", "required": True, "label": "Patient Name"},
+        {"key": "policy_number", "type": "string", "required": True, "label": "Policy Number"},
+        {"key": "consultation_date", "type": "date", "required": True, "label": "Date of Consultation"},
+        {"key": "diagnosis", "type": "string", "required": True, "label": "Diagnosis"},
+        {"key": "total_expenses", "type": "number", "required": False, "label": "Total Claimed Expenses (₹)"},
+        {"key": "patient_signature_present", "type": "boolean", "required": True, "label": "Patient Signature Present?"},
+    ],
+    "instructions": "OPD/outpatient reimbursement form. Extract consultation date and diagnosis.",
+}
+OPD_CLAIM_FORM_RULES = {"rules": [
+    {"field": "consultation_date", "check": "date_not_future", "message": "Consultation date cannot be future"},
+    {"field": "patient_signature_present", "check": "equals", "value": True, "message": "Patient signature required"},
+]}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  DOCUMENT REQUIREMENT LISTS — one per policy type
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_MIME_IMG_PDF = ["image/jpeg", "image/png", "application/pdf"]
+_MIME_IMG_PDF_WEBP = ["image/jpeg", "image/png", "image/webp", "application/pdf"]
+
+# ── Shared KYC row builders (used across all policy types) ──────────────────
+def _aadhaar_req(order: int) -> dict:
+    return {"document_type_code": "AADHAAR", "display_name": "Aadhaar Card", "is_compulsory": True,
+            "extraction_template": AADHAAR_TEMPLATE, "validation_rules": AADHAAR_RULES,
+            "description": "Government-issued Aadhaar for identity verification",
+            "instructions": "Upload front side with photo. Masked Aadhaar accepted.",
+            "allowed_mime_types": _MIME_IMG_PDF_WEBP, "max_file_size_mb": 10, "sort_order": order}
+
+def _pan_req(order: int) -> dict:
+    return {"document_type_code": "PAN", "display_name": "PAN Card", "is_compulsory": True,
+            "extraction_template": PAN_TEMPLATE, "validation_rules": PAN_RULES,
+            "description": "PAN card for identity and tax verification",
+            "instructions": "Upload front side with photo visible.",
+            "allowed_mime_types": _MIME_IMG_PDF_WEBP, "max_file_size_mb": 10, "sort_order": order}
+
+
+# ── HEALTH (standard hospitalization / reimbursement) ───────────────────────
+# Required: Aadhaar, PAN, Hospital Bill, Discharge Summary, Prescription, Claim Form
+# Optional: Lab Reports, Pharmacy Bills, Ambulance Receipt
+HEALTH_HOSPITALIZATION_DOCS = [
+    _aadhaar_req(1), _pan_req(2),
     {"document_type_code": "HOSPITAL_BILL", "display_name": "Hospital Bill / Invoice", "is_compulsory": True,
      "extraction_template": HOSPITAL_BILL_TEMPLATE, "validation_rules": HOSPITAL_BILL_RULES,
      "description": "Itemized hospital bill with all charges",
      "instructions": "Upload final hospital bill. If multi-page, use a single PDF.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 20, "sort_order": 3},
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 20, "sort_order": 3},
     {"document_type_code": "DISCHARGE_SUMMARY", "display_name": "Discharge Summary", "is_compulsory": True,
      "extraction_template": DISCHARGE_SUMMARY_TEMPLATE, "validation_rules": DISCHARGE_SUMMARY_RULES,
-     "description": "Hospital discharge summary with diagnosis and doctor details",
-     "instructions": "Must include diagnosis and treating doctor details.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 20, "sort_order": 4},
+     "description": "Hospital discharge summary with diagnosis and treating doctor",
+     "instructions": "Must include primary diagnosis and treating doctor name.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 20, "sort_order": 4},
     {"document_type_code": "PRESCRIPTION", "display_name": "Doctor's Prescription", "is_compulsory": True,
      "extraction_template": PRESCRIPTION_TEMPLATE, "validation_rules": PRESCRIPTION_RULES,
      "description": "Doctor's prescription with diagnosis and medications",
-     "instructions": "Must have doctor signature/stamp.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 15, "sort_order": 5},
+     "instructions": "Must have doctor signature/stamp and list all medications.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 5},
     {"document_type_code": "CLAIM_FORM", "display_name": "Signed Claim Form", "is_compulsory": True,
      "extraction_template": CLAIM_FORM_TEMPLATE, "validation_rules": CLAIM_FORM_RULES,
      "description": "Insurance claim form signed by patient and stamped by hospital",
      "instructions": "Must be signed by you and stamped by the hospital.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 15, "sort_order": 6},
-    # ── OPTIONAL ──
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 6},
+    # Optional
     {"document_type_code": "LAB_REPORT", "display_name": "Lab / Diagnostic Reports", "is_compulsory": False,
      "extraction_template": LAB_REPORT_TEMPLATE, "validation_rules": LAB_REPORT_RULES,
      "description": "Blood tests, imaging, or diagnostic results",
      "instructions": "Upload if tests were conducted. Include all pages.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 25, "sort_order": 7},
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 25, "sort_order": 7},
     {"document_type_code": "PHARMACY_BILL", "display_name": "Pharmacy Bills", "is_compulsory": False,
      "extraction_template": PHARMACY_BILL_TEMPLATE, "validation_rules": PHARMACY_BILL_RULES,
-     "description": "Receipts for medicines bought outside the hospital",
-     "instructions": "Upload pharmacy bills. Must show medicine names and amounts.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 10, "sort_order": 8},
-    {"document_type_code": "PREAUTH_LETTER", "display_name": "Pre-authorization Letter", "is_compulsory": False,
-     "extraction_template": PREAUTH_LETTER_TEMPLATE, "validation_rules": PREAUTH_RULES,
-     "description": "Pre-auth / cashless approval letter from insurer",
-     "instructions": "Upload if this is a cashless claim.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 10, "sort_order": 9},
-    {"document_type_code": "FIR_REPORT", "display_name": "FIR / Medico-Legal Certificate", "is_compulsory": False,
-     "extraction_template": FIR_MLC_TEMPLATE, "validation_rules": FIR_MLC_RULES,
-     "description": "Police FIR or MLC — required for accident/injury claims",
-     "instructions": "Upload FIR or MLC if claim is related to accident/injury.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 15, "sort_order": 10},
-    {"document_type_code": "DEATH_CERTIFICATE", "display_name": "Death Certificate", "is_compulsory": False,
-     "extraction_template": DEATH_CERTIFICATE_TEMPLATE, "validation_rules": DEATH_CERTIFICATE_RULES,
-     "description": "Death certificate — required for death-related claims",
-     "instructions": "Upload registered death certificate from municipal authority.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 10, "sort_order": 11},
+     "description": "Receipts for medicines purchased outside the hospital",
+     "instructions": "Upload pharmacy bills — must show medicine names and amounts.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 10, "sort_order": 8},
     {"document_type_code": "AMBULANCE_RECEIPT", "display_name": "Ambulance Receipt", "is_compulsory": False,
      "extraction_template": AMBULANCE_RECEIPT_TEMPLATE, "validation_rules": AMBULANCE_RECEIPT_RULES,
-     "description": "Receipt for ambulance services",
-     "instructions": "Upload ambulance receipt if charges are part of your claim.",
-     "allowed_mime_types": ["image/jpeg", "image/png", "application/pdf"], "max_file_size_mb": 10, "sort_order": 12},
+     "description": "Receipt for ambulance services if charges are being claimed",
+     "instructions": "Upload only if you are claiming ambulance expenses.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 10, "sort_order": 9},
+]
+
+# ── CASHLESS (pre-authorised hospitalisation) ───────────────────────────────
+# Required: Aadhaar, PAN, Pre-auth Letter, Hospital Bill, Discharge Summary, Claim Form
+# Optional: Lab Reports, Pharmacy Bills, Ambulance Receipt
+# Note: Prescription is NOT separately required — diagnosis captured in discharge summary.
+#       FIR / Death Cert are NOT relevant for a planned cashless admission.
+HEALTH_CASHLESS_DOCS = [
+    _aadhaar_req(1), _pan_req(2),
+    {"document_type_code": "PREAUTH_LETTER", "display_name": "Pre-authorization Letter", "is_compulsory": True,
+     "extraction_template": PREAUTH_LETTER_TEMPLATE, "validation_rules": PREAUTH_RULES,
+     "description": "Insurer's pre-authorization / cashless approval letter",
+     "instructions": "Upload the pre-auth letter you received from the insurer before admission.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 10, "sort_order": 3},
+    {"document_type_code": "HOSPITAL_BILL", "display_name": "Final Hospital Bill", "is_compulsory": True,
+     "extraction_template": HOSPITAL_BILL_TEMPLATE, "validation_rules": HOSPITAL_BILL_RULES,
+     "description": "Final itemized hospital bill at discharge",
+     "instructions": "Upload the final bill issued at discharge. Must be itemized.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 20, "sort_order": 4},
+    {"document_type_code": "DISCHARGE_SUMMARY", "display_name": "Discharge Summary", "is_compulsory": True,
+     "extraction_template": DISCHARGE_SUMMARY_TEMPLATE, "validation_rules": DISCHARGE_SUMMARY_RULES,
+     "description": "Hospital discharge summary with clinical details",
+     "instructions": "Must include diagnosis, procedures, and treating doctor name.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 20, "sort_order": 5},
+    {"document_type_code": "CLAIM_FORM", "display_name": "Signed Claim Form", "is_compulsory": True,
+     "extraction_template": CLAIM_FORM_TEMPLATE, "validation_rules": CLAIM_FORM_RULES,
+     "description": "Insurer claim form signed by patient and hospital",
+     "instructions": "Must be signed by you and counter-stamped by the hospital.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 6},
+    # Optional
+    {"document_type_code": "LAB_REPORT", "display_name": "Lab / Diagnostic Reports", "is_compulsory": False,
+     "extraction_template": LAB_REPORT_TEMPLATE, "validation_rules": LAB_REPORT_RULES,
+     "description": "Lab or diagnostic reports related to this admission",
+     "instructions": "Upload if relevant tests were conducted.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 25, "sort_order": 7},
+    {"document_type_code": "PHARMACY_BILL", "display_name": "Pharmacy Bills", "is_compulsory": False,
+     "extraction_template": PHARMACY_BILL_TEMPLATE, "validation_rules": PHARMACY_BILL_RULES,
+     "description": "Bills for medicines purchased outside the hospital pharmacy",
+     "instructions": "Upload only if claiming outside-pharmacy medicine costs.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 10, "sort_order": 8},
+    {"document_type_code": "AMBULANCE_RECEIPT", "display_name": "Ambulance Receipt", "is_compulsory": False,
+     "extraction_template": AMBULANCE_RECEIPT_TEMPLATE, "validation_rules": AMBULANCE_RECEIPT_RULES,
+     "description": "Ambulance receipt if charges are being settled via cashless",
+     "instructions": "Upload only if ambulance charges are part of the cashless claim.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 10, "sort_order": 9},
+]
+
+# ── MOTOR (own damage / accident / theft) ──────────────────────────────────
+# Required: Aadhaar, PAN, Vehicle RC, Driving License, Repair Estimate, Motor Claim Form
+# Optional: FIR (compulsory for theft / major accident), Vehicle Photo
+MOTOR_DOCS = [
+    _aadhaar_req(1), _pan_req(2),
+    {"document_type_code": "VEHICLE_RC", "display_name": "Vehicle RC (Registration Certificate)", "is_compulsory": True,
+     "extraction_template": VEHICLE_RC_TEMPLATE, "validation_rules": VEHICLE_RC_RULES,
+     "description": "Vehicle registration certificate",
+     "instructions": "Upload both sides if information spans front and back.",
+     "allowed_mime_types": _MIME_IMG_PDF_WEBP, "max_file_size_mb": 10, "sort_order": 3},
+    {"document_type_code": "DRIVING_LICENSE", "display_name": "Driving License", "is_compulsory": True,
+     "extraction_template": DRIVING_LICENSE_TEMPLATE, "validation_rules": DL_RULES,
+     "description": "Valid driving license of the driver at the time of incident",
+     "instructions": "Must be the license of the person driving at the time of the incident.",
+     "allowed_mime_types": _MIME_IMG_PDF_WEBP, "max_file_size_mb": 10, "sort_order": 4},
+    {"document_type_code": "REPAIR_ESTIMATE", "display_name": "Repair Estimate", "is_compulsory": True,
+     "extraction_template": REPAIR_ESTIMATE_TEMPLATE, "validation_rules": REPAIR_ESTIMATE_RULES,
+     "description": "Itemized repair estimate from an authorised / network workshop",
+     "instructions": "Upload the repair estimate from your garage. Include parts and labour breakdown.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 5},
+    {"document_type_code": "MOTOR_CLAIM_FORM", "display_name": "Signed Motor Claim Form", "is_compulsory": True,
+     "extraction_template": MOTOR_CLAIM_FORM_TEMPLATE, "validation_rules": MOTOR_CLAIM_FORM_RULES,
+     "description": "Insurer's motor claim form with incident details",
+     "instructions": "Fill and sign the claim form. Describe the incident accurately.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 6},
+    # Optional
+    {"document_type_code": "FIR_REPORT", "display_name": "FIR / Police Report", "is_compulsory": False,
+     "extraction_template": FIR_MLC_TEMPLATE, "validation_rules": FIR_MLC_RULES,
+     "description": "Police FIR — required for theft or major accidents",
+     "instructions": "Upload FIR if the vehicle was stolen or the incident involved third parties.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 7},
+    {"document_type_code": "VEHICLE_PHOTO", "display_name": "Vehicle Damage Photos", "is_compulsory": False,
+     "extraction_template": None, "validation_rules": None,
+     "description": "Photos showing the damage to the vehicle",
+     "instructions": "Upload clear photos of all damaged areas. Multiple photos can be combined in one PDF.",
+     "allowed_mime_types": ["image/jpeg", "image/png", "image/webp", "application/pdf"], "max_file_size_mb": 20, "sort_order": 8},
+]
+
+# ── REIMBURSEMENT (OPD / outpatient / top-up) ──────────────────────────────
+# Required: Aadhaar, PAN, Prescription, OPD Claim Form
+# Optional: Pharmacy Bills, Lab Reports
+# Note: No hospital bill, no discharge summary (this is outpatient).
+#       No FIR, no death cert, no pre-auth.
+REIMBURSEMENT_OPD_DOCS = [
+    _aadhaar_req(1), _pan_req(2),
+    {"document_type_code": "PRESCRIPTION", "display_name": "Doctor's Prescription", "is_compulsory": True,
+     "extraction_template": PRESCRIPTION_TEMPLATE, "validation_rules": PRESCRIPTION_RULES,
+     "description": "Doctor's prescription for the consultation being claimed",
+     "instructions": "Must include doctor name, diagnosis, and signature/stamp.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 3},
+    {"document_type_code": "OPD_CLAIM_FORM", "display_name": "OPD / Reimbursement Claim Form", "is_compulsory": True,
+     "extraction_template": OPD_CLAIM_FORM_TEMPLATE, "validation_rules": OPD_CLAIM_FORM_RULES,
+     "description": "Claim form for outpatient / reimbursement expenses",
+     "instructions": "Fill and sign the OPD claim form. Attach all bills.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 15, "sort_order": 4},
+    # Optional
+    {"document_type_code": "PHARMACY_BILL", "display_name": "Pharmacy Bills", "is_compulsory": False,
+     "extraction_template": PHARMACY_BILL_TEMPLATE, "validation_rules": PHARMACY_BILL_RULES,
+     "description": "Medicine purchase receipts from pharmacy",
+     "instructions": "Upload pharmacy bills with medicine names and amounts.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 10, "sort_order": 5},
+    {"document_type_code": "LAB_REPORT", "display_name": "Lab / Diagnostic Reports", "is_compulsory": False,
+     "extraction_template": LAB_REPORT_TEMPLATE, "validation_rules": LAB_REPORT_RULES,
+     "description": "Lab or diagnostic results related to this OPD visit",
+     "instructions": "Upload only if tests are part of the reimbursement claim.",
+     "allowed_mime_types": _MIME_IMG_PDF, "max_file_size_mb": 25, "sort_order": 6},
 ]
 
 
@@ -451,8 +674,8 @@ CASHLESS_CLAIMS_TEMPLATE = [
 #  HELPERS
 # ────────────────────────────────────────────────────────────────────────────
 
-async def _seed_or_get_templates(db: AsyncSession) -> tuple[object, object]:
-    """Idempotently seed insurer, policy type, and document requirements."""
+async def _seed_or_get_templates(db: AsyncSession) -> tuple[object, dict]:
+    """Idempotently seed insurer, policy types, and document requirements (one per claim type)."""
     # Get or create DEMO_HEALTH insurer
     result = await db.execute(select(Insurer).where(Insurer.code == "DEMO_HEALTH"))
     insurer = result.scalar_one_or_none()
@@ -471,48 +694,140 @@ async def _seed_or_get_templates(db: AsyncSession) -> tuple[object, object]:
     else:
         print(f"  ~ skip insurer DEMO_HEALTH (exists)")
 
-    # Get or create HEALTH_INDIVIDUAL policy type
-    result = await db.execute(select(PolicyType).where(PolicyType.code == "HEALTH_INDIVIDUAL"))
-    policy_type = result.scalar_one_or_none()
-    if not policy_type:
-        policy_type = PolicyType(
-            id=uuid.uuid4(),
-            insurer_id=insurer.id,
-            category="HEALTH",
-            code="HEALTH_INDIVIDUAL",
-            name="Health Individual Plan",
-            description="Individual health insurance policy with hospitalization coverage",
-            config={
+    # One PolicyType per claim-type key used in policies, each with its own doc requirements
+    POLICY_TYPE_SPECS = [
+        {
+            "pol_type_key": "HEALTH",
+            "code": "HEALTH_INDIVIDUAL",
+            "category": "HEALTH",
+            "name": "Health Individual Plan",
+            "description": "Individual health insurance with hospitalization coverage",
+            "config": {
                 "max_sum_insured": 1000000,
                 "covers": ["hospitalization", "pre_post", "ambulance", "daycare"],
                 "waiting_period_days": 30,
                 "copay_pct": 10,
             },
-            is_active=True,
+            "docs": HEALTH_HOSPITALIZATION_DOCS,
+        },
+        {
+            "pol_type_key": "CASHLESS",
+            "code": "HEALTH_CASHLESS",
+            "category": "HEALTH",
+            "name": "Cashless Health Plan",
+            "description": "Cashless hospitalization via network hospitals",
+            "config": {
+                "max_sum_insured": 1000000,
+                "covers": ["cashless_hospitalization", "pre_post", "daycare"],
+                "network_required": True,
+                "waiting_period_days": 0,
+            },
+            "docs": HEALTH_CASHLESS_DOCS,
+        },
+        {
+            "pol_type_key": "MOTOR",
+            "code": "MOTOR_OWN_DAMAGE",
+            "category": "MOTOR",
+            "name": "Motor Own Damage",
+            "description": "Own-damage motor insurance for vehicle repair or replacement",
+            "config": {
+                "covers": ["own_damage", "theft", "natural_calamity"],
+                "idv_method": "market_value",
+            },
+            "docs": MOTOR_DOCS,
+        },
+        {
+            "pol_type_key": "REIMBURSEMENT",
+            "code": "REIMBURSEMENT_OPD",
+            "category": "HEALTH",
+            "name": "Reimbursement OPD Plan",
+            "description": "Out-patient and reimbursement-based health plan",
+            "config": {
+                "max_sum_insured": 500000,
+                "covers": ["opd", "diagnostics", "pharmacy"],
+                "copay_pct": 20,
+            },
+            "docs": REIMBURSEMENT_OPD_DOCS,
+        },
+    ]
+
+    policy_type_map: dict[str, object] = {}
+    for spec in POLICY_TYPE_SPECS:
+        result = await db.execute(select(PolicyType).where(PolicyType.code == spec["code"]))
+        pt = result.scalar_one_or_none()
+        if not pt:
+            pt = PolicyType(
+                id=uuid.uuid4(),
+                insurer_id=insurer.id,
+                category=spec["category"],
+                code=spec["code"],
+                name=spec["name"],
+                description=spec["description"],
+                config=spec["config"],
+                is_active=True,
+            )
+            db.add(pt)
+            await db.flush()
+            print(f"  + policy_type {spec['code']}")
+        else:
+            print(f"  ~ skip policy_type {spec['code']} (exists)")
+
+        # Upsert doc requirements: update/add entries in spec; soft-delete removed ones
+        # (hard DELETE would violate the FK from claim_documents)
+        existing_res = await db.execute(
+            select(DocumentRequirement).where(DocumentRequirement.policy_type_id == pt.id)
         )
-        db.add(policy_type)
+        existing_map: dict[str, DocumentRequirement] = {
+            r.document_type_code: r for r in existing_res.scalars().all()
+        }
+        spec_codes = {d["document_type_code"] for d in spec["docs"]}
+        added = updated_req = 0
+        for req_data in spec["docs"]:
+            code = req_data["document_type_code"]
+            if code in existing_map:
+                # Update every field so stale data from old seeds is corrected
+                row = existing_map[code]
+                for field, val in req_data.items():
+                    setattr(row, field, val)
+                row.is_active = True  # re-activate if it was soft-deleted
+                updated_req += 1
+            else:
+                db.add(DocumentRequirement(id=uuid.uuid4(), policy_type_id=pt.id, **req_data))
+                added += 1
+        # Soft-delete rows that are no longer in the spec
+        for code, row in existing_map.items():
+            if code not in spec_codes:
+                row.is_active = False
         await db.flush()
-        print("  + policy_type HEALTH_INDIVIDUAL")
-    else:
-        print(f"  ~ skip policy_type HEALTH_INDIVIDUAL (exists)")
+        print(f"  = doc requirements for {spec['code']}: {updated_req} updated, {added} added, "
+              f"{sum(1 for c, r in existing_map.items() if c not in spec_codes)} deactivated")
 
-    # Get or create document requirements
-    existing_result = await db.execute(
-        select(DocumentRequirement).where(DocumentRequirement.policy_type_id == policy_type.id)
-    )
-    existing_codes = {r.document_type_code for r in existing_result.scalars().all()}
-    created = 0
-    for req_data in HEALTH_DOCUMENT_REQUIREMENTS:
-        if req_data["document_type_code"] not in existing_codes:
-            db.add(DocumentRequirement(id=uuid.uuid4(), policy_type_id=policy_type.id, **req_data))
-            created += 1
-    if created:
+        policy_type_map[spec["pol_type_key"]] = pt
+
+    return insurer, policy_type_map
+
+
+async def _fix_policy_type_assignments(
+    db: AsyncSession,
+    policy_type_map: dict[str, object],
+) -> None:
+    """Patch existing Policy rows so policy_type_id matches the correct PolicyType."""
+    updated = 0
+    for pol_type_key, pt in policy_type_map.items():
+        # Fetch ALL policies for this type (NULL-safe: also catches policy_type_id IS NULL)
+        result = await db.execute(
+            select(Policy).where(Policy.policy_type == pol_type_key)
+        )
+        for pol in result.scalars().all():
+            if pol.policy_type_id != pt.id or pol.insurer_id != pt.insurer_id:  # type: ignore[attr-defined]
+                pol.policy_type_id = pt.id  # type: ignore[attr-defined]
+                pol.insurer_id = pt.insurer_id  # type: ignore[attr-defined]
+                updated += 1
+    if updated:
         await db.flush()
-        print(f"  + {created} document requirements")
+        print(f"  = {updated} existing policies patched to correct policy_type_id")
     else:
-        print(f"  ~ skip document requirements (all {len(existing_codes)} exist)")
-
-    return insurer, policy_type
+        print("  ~ all policies already have correct policy_type_id")
 
 
 async def _get_or_create_user(db: AsyncSession, data: dict) -> tuple[User, bool]:
@@ -661,6 +976,88 @@ async def _get_or_create_cashless_claim(
 #  MAIN
 # ────────────────────────────────────────────────────────────────────────────
 
+# ── KYC seed data (Aadhaar + PAN captured at policy-purchase time) ─────────────
+# These are the ground-truth records.  When a user uploads an Aadhaar/PAN
+# during claim filing the OCR output is compared against these records.
+
+KYC_SEED = [
+    # customer1 — Rajesh Kumar
+    {
+        "email": "customer1@test.ai",
+        "document_type": "AADHAAR",
+        "document_number": "123456789012",
+        "document_data": {
+            "full_name": "Rajesh Kumar",
+            "dob": "01/01/1985",
+            "gender": "M",
+            "address": "123 Main Street, Delhi - 110001",
+        },
+        "verification_source": "INSURER_SYNC",
+    },
+    {
+        "email": "customer1@test.ai",
+        "document_type": "PAN",
+        "document_number": "ABCPR1234F",
+        "document_data": {
+            "full_name": "Rajesh Kumar",
+            "dob": "01/01/1985",
+            "father_name": "Suresh Kumar",
+        },
+        "verification_source": "INSURER_SYNC",
+    },
+    # customer2 — Priya Sharma
+    {
+        "email": "customer2@test.ai",
+        "document_type": "AADHAAR",
+        "document_number": "987654321098",
+        "document_data": {
+            "full_name": "Priya Sharma",
+            "dob": "15/06/1990",
+            "gender": "F",
+            "address": "456 Park Avenue, Mumbai - 400001",
+        },
+        "verification_source": "INSURER_SYNC",
+    },
+    {
+        "email": "customer2@test.ai",
+        "document_type": "PAN",
+        "document_number": "ABCPS5678K",
+        "document_data": {
+            "full_name": "Priya Sharma",
+            "dob": "15/06/1990",
+            "father_name": "Ravi Sharma",
+        },
+        "verification_source": "INSURER_SYNC",
+    },
+]
+
+
+async def _seed_kyc(db: AsyncSession, user: User, entry: dict) -> bool:
+    """Insert a KYCDocument row if it doesn't already exist.  Returns True if created."""
+    from datetime import timezone as _tz
+    existing = await db.execute(
+        select(KYCDocument).where(
+            KYCDocument.user_id == user.id,
+            KYCDocument.document_type == entry["document_type"],
+            KYCDocument.is_active.is_(True),
+        )
+    )
+    if existing.scalar_one_or_none():
+        return False
+    row = KYCDocument(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        document_type=entry["document_type"],
+        document_number=entry["document_number"],
+        document_data=entry["document_data"],
+        verified_at=datetime.now(tz=_tz.utc),
+        verification_source=entry["verification_source"],
+        is_active=True,
+    )
+    db.add(row)
+    return True
+
+
 async def seed() -> None:
     async with AsyncSessionLocal() as db:
         print("\n── InsureFlow seed script ──────────────────────")
@@ -678,16 +1075,33 @@ async def seed() -> None:
                 print(f"  ~ skip  {u_data['email']}  (exists)")
         await db.flush()
 
-        # 1b. Seed insurer, policy type, and document requirements (idempotent)
-        demo_insurer, health_pt = await _seed_or_get_templates(db)
+        # 1a. KYC records (Aadhaar + PAN for each customer)
+        kyc_created = 0
+        for kyc_data in KYC_SEED:
+            user = created_users.get(kyc_data["email"])
+            if user:
+                created = await _seed_kyc(db, user, kyc_data)
+                if created:
+                    kyc_created += 1
+                    print(f"  + KYC   {kyc_data['email']}  {kyc_data['document_type']}  ({kyc_data['document_number'][:4]}****{'**'})") 
+                else:
+                    print(f"  ~ skip  KYC {kyc_data['email']} {kyc_data['document_type']} (exists)")
+        await db.flush()
+
+        # 1b. Seed insurer, policy types, and document requirements (self-correcting)
+        demo_insurer, policy_type_map = await _seed_or_get_templates(db)
+
+        # 1c. Patch any existing Policy rows that have wrong/missing policy_type_id
+        await _fix_policy_type_assignments(db, policy_type_map)
 
         # 2. Policies for customer1
         customer = created_users["customer1@test.ai"]
         created_policies: dict[str, Policy] = {}
         policies_created = 0
         for (pol_num, pol_type, sum_ins, premium, start, end, meta) in POLICIES_TEMPLATE:
-            _insurer_id = demo_insurer.id if (demo_insurer and pol_type == "HEALTH") else None
-            _pt_id = health_pt.id if (health_pt and pol_type == "HEALTH") else None
+            _insurer_id = demo_insurer.id if demo_insurer else None
+            _pt = policy_type_map.get(pol_type)
+            _pt_id = _pt.id if _pt else None
             policy, created = await _get_or_create_policy(
                 db, customer.id, pol_num, pol_type, sum_ins, premium, start, end, meta,
                 insured_name=customer.full_name or "Test Customer One",
@@ -710,8 +1124,9 @@ async def seed() -> None:
             ("POL-CASHLESS-C2-2026-001","CASHLESS",      350_000.0, 13_000.0, date(2025, 1, 1), date(2026, 12, 31), {"network_hospitals": ["Apollo", "Fortis", "Max"]}),
         ]
         for (pol_num, pol_type, sum_ins, premium, start, end, meta) in POLICIES_C2:
-            _insurer_id2 = demo_insurer.id if (demo_insurer and pol_type == "HEALTH") else None
-            _pt_id2 = health_pt.id if (health_pt and pol_type == "HEALTH") else None
+            _insurer_id2 = demo_insurer.id if demo_insurer else None
+            _pt2 = policy_type_map.get(pol_type)
+            _pt_id2 = _pt2.id if _pt2 else None
             policy, created = await _get_or_create_policy(
                 db, customer2.id, pol_num, pol_type, sum_ins, premium, start, end, meta,
                 insured_name=customer2.full_name or "Test Customer Two",

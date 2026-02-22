@@ -128,7 +128,10 @@ async def get_document_requirements(
 
     req_res = await db.execute(
         select(DocumentRequirement)
-        .where(DocumentRequirement.policy_type_id == policy.policy_type_id)
+        .where(
+            DocumentRequirement.policy_type_id == policy.policy_type_id,
+            DocumentRequirement.is_active == True,  # noqa: E712
+        )
         .order_by(DocumentRequirement.is_compulsory.desc(), DocumentRequirement.display_name)
     )
     requirements = req_res.scalars().all()

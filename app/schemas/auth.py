@@ -9,6 +9,18 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     role: str = "CUSTOMER"
+    # DPDP Act, 2023 — explicit consent flag sent from the registration form.
+    # Must be True; validation handled both client-side and here.
+    consent_accepted: bool = False
+
+    @field_validator("consent_accepted")
+    @classmethod
+    def consent_must_be_given(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError(
+                "You must accept the Terms & Conditions and Privacy Policy to register."
+            )
+        return v
 
     @field_validator("password")
     @classmethod

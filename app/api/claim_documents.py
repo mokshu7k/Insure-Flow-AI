@@ -1,8 +1,12 @@
 """ClaimDocument routes — new model-aware upload, list, and download."""
 from __future__ import annotations
 
+import json
+import uuid
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response as FileResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -15,28 +19,42 @@ from app.services import claim_document_service
 router = APIRouter(prefix="/claim-documents", tags=["claim-documents"])
 
 
-@router.post("/validate-relevance")
-async def validate_document_relevance(
+@router.post("/inline-ocr")
+async def inline_ocr_preview(
     document_type_code: str = Form(...),
     claim_type: str = Form(...),
+    requirement_id: str | None = Form(None),
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Quick relevance check — no DB writes, no OCR.
-    Returns whether the uploaded file looks like an insurance document
-    of the expected type before the full upload+OCR pipeline runs."""
+    """Combined relevance check + full OCR extraction in one LLM call.
+    No DB writes.  Returns is_relevant, extracted_fields, confidence and
+    missing_fields so the frontend can show inline results and let the user
+    edit before the final upload."""
     from app.config import settings
+    from app.models.document_requirement import DocumentRequirement
 
     content = await file.read()
     if len(content) > settings.MAX_UPLOAD_SIZE:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="File too large")
 
-    result = await claim_document_service.validate_document_relevance(
+    requirement = None
+    if requirement_id:
+        res = await db.execute(
+            select(DocumentRequirement).where(
+                DocumentRequirement.id == uuid.UUID(requirement_id)
+            )
+        )
+        requirement = res.scalar_one_or_none()
+
+    result = await claim_document_service.inline_ocr_preview(
         content=content,
         content_type=file.content_type or "",
         document_type_code=document_type_code,
         claim_type=claim_type,
+        requirement=requirement,
     )
     return result
 
@@ -47,12 +65,22 @@ async def upload_claim_document(
     claim_id: str = Form(...),
     document_type_code: str = Form(...),
     document_requirement_id: str | None = Form(None),
+    precomputed_data: str | None = Form(None),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a document for a claim.  Uses the new ClaimDocument model and
-    template-aware Gemini extraction.  Extraction runs in the background."""
+    """Upload a document for a claim.  If *precomputed_data* (JSON string) is
+    provided the inline-OCR result is used directly and no background
+    extraction runs.  Otherwise template-aware Gemini extraction runs in the
+    background."""
+    parsed_precomputed: dict | None = None
+    if precomputed_data:
+        try:
+            parsed_precomputed = json.loads(precomputed_data)
+        except (json.JSONDecodeError, ValueError):
+            parsed_precomputed = None
+
     doc = await claim_document_service.upload_claim_document(
         claim_id=claim_id,
         uploader_id=str(current_user.id),
@@ -62,6 +90,7 @@ async def upload_claim_document(
         document_requirement_id=document_requirement_id,
         db=db,
         background_tasks=background_tasks,
+        precomputed_data=parsed_precomputed,
     )
     return ClaimDocumentResponse.model_validate(doc)
 

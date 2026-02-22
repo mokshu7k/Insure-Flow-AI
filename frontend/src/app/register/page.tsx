@@ -16,6 +16,8 @@ export default function RegisterPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [role, setRole] = useState<UserRole>("CUSTOMER");
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
@@ -26,6 +28,8 @@ export default function RegisterPage() {
         console.log("[Register] Submit →", { email, role, pwLen: password.length });
 
         if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+        if (!acceptedTerms) { setError("You must accept the Terms & Conditions to register."); return; }
+        if (!acceptedPrivacy) { setError("You must accept the Privacy Policy to register."); return; }
         setError(null);
         setLoading(true);
 
@@ -33,7 +37,7 @@ export default function RegisterPage() {
             const res = await fetch("/api/auth/register", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email, password, role }),
+                body: JSON.stringify({ email, password, role, consent_accepted: true }),
             });
             const data = await res.json();
             console.log("[Register] Response", res.status, data);
@@ -108,12 +112,90 @@ export default function RegisterPage() {
                     </div>
                 </div>
 
+                {/* Consent checkboxes — DPDP Act Section 6 */}
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 10,
+                        padding: "12px 14px",
+                        background: "var(--bg-surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 4,
+                    }}
+                >
+                    <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: 2 }}>
+                        Required consents (DPDP Act, 2023)
+                    </p>
+
+                    <label
+                        style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
+                            cursor: "pointer",
+                            fontSize: "0.8125rem",
+                            color: "var(--text-secondary)",
+                        }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={acceptedTerms}
+                            onChange={(e) => setAcceptedTerms(e.target.checked)}
+                            style={{ marginTop: 2, accentColor: "var(--blue)", flexShrink: 0 }}
+                        />
+                        <span>
+                            I have read and accept the{" "}
+                            <a
+                                href="/terms"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: "var(--blue)", textDecoration: "underline" }}
+                            >
+                                Terms &amp; Conditions
+                            </a>
+                            , including the purposes for which my personal data will be
+                            processed.
+                        </span>
+                    </label>
+
+                    <label
+                        style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 8,
+                            cursor: "pointer",
+                            fontSize: "0.8125rem",
+                            color: "var(--text-secondary)",
+                        }}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={acceptedPrivacy}
+                            onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+                            style={{ marginTop: 2, accentColor: "var(--blue)", flexShrink: 0 }}
+                        />
+                        <span>
+                            I have read and accept the{" "}
+                            <a
+                                href="/privacy"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: "var(--blue)", textDecoration: "underline" }}
+                            >
+                                Privacy Policy
+                            </a>
+                            , including collection of health and financial data for
+                            claim processing.
+                        </span>
+                    </label>
+                </div>
+
                 <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={loading || !!success}
-                    style={{ marginTop: 6, justifyContent: "center", gap: 8 }}
-                >
+                    disabled={loading || !!success || !acceptedTerms || !acceptedPrivacy}
+                    style={{ marginTop: 6, justifyContent: "center", gap: 8 }}>
                     {loading
                         ? <><Loader2 size={14} className="animate-spin" /> Creating account…</>
                         : "Create account"

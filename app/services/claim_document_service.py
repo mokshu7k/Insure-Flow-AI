@@ -35,6 +35,7 @@ from app.core.exceptions import BusinessRuleError, NotFoundError, PermissionDeni
 from app.models.claim import Claim
 from app.models.claim_document import ClaimDocument
 from app.models.document_requirement import DocumentRequirement
+from app.models.kyc_document import KYCDocument
 from app.models.policy import Policy
 from app.services.extraction_service import (
     CONSISTENCY_RULES,
@@ -65,10 +66,13 @@ async def upload_claim_document(
     document_requirement_id: str | None,
     db: AsyncSession,
     background_tasks: BackgroundTasks | None = None,
+    precomputed_data: dict[str, Any] | None = None,
 ) -> ClaimDocument:
     """
-    Encrypt and persist the file immediately, return the ClaimDocument with
-    ocr_status=PENDING. Template-aware Gemini extraction runs asynchronously.
+    Encrypt and persist the file.  If *precomputed_data* is supplied (from the
+    inline-OCR preview endpoint) the extraction is treated as done and the doc
+    is saved with ocr_status=COMPLETED immediately — no background task runs.
+    Otherwise extraction runs asynchronously in the background.
     """
     # Verify claim exists and caller has access
     result = await db.execute(select(Claim).where(Claim.id == uuid.UUID(claim_id)))
@@ -106,6 +110,26 @@ async def upload_claim_document(
         validation_status="PENDING",
         requires_manual_review=True,
     )
+
+    # ── If pre-extracted data is provided: skip background OCR ──────────────
+    if precomputed_data is not None:
+        promoted = promote_fields(document_type_code, precomputed_data)
+        doc.ocr_status = "COMPLETED"
+        doc.extracted_data = precomputed_data
+        doc.extraction_confidence = 0.9
+        doc.validation_status = "ACCEPTED"
+        doc.validation_reason = (
+            f"Pre-extracted via inline OCR — {len(precomputed_data)} fields."
+        )
+        doc.requires_manual_review = False
+        for col, val in promoted.items():
+            if hasattr(doc, col):
+                setattr(doc, col, val)
+        db.add(doc)
+        await db.commit()
+        await db.refresh(doc)
+        return doc
+
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
@@ -172,6 +196,17 @@ async def _run_extraction_background(
                 policy = pol_res.scalar_one_or_none()
                 if policy:
                     policy_type_id = policy.policy_type_id
+
+            # ── Load user's KYC records (Aadhaar / PAN from policy purchase) ─
+            kyc_records: list[KYCDocument] = []
+            if claim:
+                kyc_res = await bg_db.execute(
+                    select(KYCDocument).where(
+                        KYCDocument.user_id == claim.user_id,
+                        KYCDocument.is_active.is_(True),
+                    )
+                )
+                kyc_records = list(kyc_res.scalars().all())
 
             # ── Fetch DocumentRequirement template ──
             requirement: DocumentRequirement | None = None
@@ -289,6 +324,26 @@ async def _run_extraction_background(
                     val_status = "FLAGGED"
                     val_reason = gatekeeper_decision.reason
 
+            # ── KYC identity match ───────────────────────────────────────────
+            # Compare extracted Aadhaar/PAN number and name against what the
+            # insurer captured at policy-purchase time (KYCDocument rows).
+            kyc_match, kyc_reason, kyc_fraud_boost = _kyc_identity_match(
+                document_type_code, fields, kyc_records
+            )
+            final_fraud_weight = float(gatekeeper_decision.fraud_signal_weight)
+            if not kyc_match:
+                final_fraud_weight = max(final_fraud_weight, kyc_fraud_boost)
+                if val_status == "ACCEPTED":
+                    val_status = "FLAGGED"
+                existing = val_reason or ""
+                val_reason = (
+                    existing + ("\n" if existing else "") + kyc_reason
+                )
+                logger.warning(
+                    "ClaimDocument %s KYC mismatch for %s: %s",
+                    doc_id, document_type_code, kyc_reason,
+                )
+
             # ── Persist ──────────────────────────────────────────────────────
             doc_res = await bg_db.execute(
                 select(ClaimDocument).where(ClaimDocument.id == uuid.UUID(doc_id))
@@ -305,8 +360,12 @@ async def _run_extraction_background(
             doc.missing_fields = missing_fields or None
             doc.validation_status = val_status
             doc.validation_reason = val_reason
-            doc.authenticity_metadata = gatekeeper_decision.metadata
-            doc.fraud_signal_weight = float(gatekeeper_decision.fraud_signal_weight)
+            doc.authenticity_metadata = {
+                **gatekeeper_decision.metadata,
+                "kyc_match": kyc_match,
+                "kyc_reason": kyc_reason,
+            }
+            doc.fraud_signal_weight = final_fraud_weight
             doc.requires_manual_review = (
                 confidence < 0.5 or bool(missing_fields) or wrong_type
             )
@@ -422,6 +481,99 @@ Return ONLY a valid JSON object. No markdown fences.
 Include patient_name, hospital_name, date, total_amount, and all other relevant fields.
 If this document is NOT a {doc_type_code}, set "_wrong_document_type": true and "_detected_type": "<type>".
 Add "_extraction_notes" with any observations."""
+
+
+# ── KYC identity matching helpers ────────────────────────────────────────────
+
+def _normalize_id(s: str) -> str:
+    """Strip spaces/dashes and uppercase — for Aadhaar/PAN number comparison."""
+    return re.sub(r"[\s\-]", "", s.strip()).upper()
+
+
+def _name_similarity(a: str, b: str) -> float:
+    """Word-overlap similarity ratio between two name strings (0.0 – 1.0)."""
+    aw = set(a.lower().split())
+    bw = set(b.lower().split())
+    if not aw or not bw:
+        return 0.0
+    return len(aw & bw) / max(len(aw), len(bw))
+
+
+def _kyc_identity_match(
+    document_type_code: str,
+    extracted_fields: dict[str, Any],
+    kyc_records: list,
+) -> tuple[bool, str, float]:
+    """
+    Compare OCR-extracted identity fields from an uploaded document against
+    the user's KYC records stored at policy-purchase time.
+
+    Returns (is_match, reason, fraud_signal_boost).
+    - is_match=True  → passed (or no KYC on file → skipped)
+    - is_match=False → mismatch detected; reason explains what differs
+    - fraud_signal_boost → additional fraud weight to apply (0.0 – 0.7)
+    """
+    doc_type_upper = document_type_code.upper()
+
+    if "AADHAAR" in doc_type_upper:
+        kyc_type = "AADHAAR"
+        extracted_number = str(extracted_fields.get("aadhaar_number", "")).strip()
+    elif "PAN" in doc_type_upper:
+        kyc_type = "PAN"
+        extracted_number = str(extracted_fields.get("pan_number", "")).strip()
+    else:
+        return True, "No KYC identity check required for this document type.", 0.0
+
+    # Find the active KYC record for this document type
+    kyc = next(
+        (k for k in kyc_records if k.document_type == kyc_type and k.is_active),
+        None,
+    )
+    if kyc is None:
+        return True, f"No {kyc_type} KYC record on file — identity check skipped.", 0.0
+
+    issues: list[str] = []
+
+    # 1. Document-number comparison ─────────────────────────────────────────
+    if extracted_number and kyc.document_number:
+        norm_extracted = _normalize_id(extracted_number)
+        norm_kyc = _normalize_id(str(kyc.document_number))
+
+        if kyc_type == "AADHAAR" and norm_extracted.startswith("XXXX"):
+            # Masked Aadhaar — compare only last 4 digits
+            if norm_extracted[-4:] != norm_kyc[-4:]:
+                issues.append(
+                    f"Aadhaar last-4 mismatch: uploaded ends '{norm_extracted[-4:]}', "
+                    f"on-record ends '{norm_kyc[-4:]}'"
+                )
+        elif norm_extracted != norm_kyc:
+            issues.append(
+                f"{kyc_type} number mismatch: uploaded '{extracted_number}', "
+                f"on-record '{kyc.document_number}'"
+            )
+
+    # 2. Name comparison ─────────────────────────────────────────────────────
+    extracted_name = str(extracted_fields.get("full_name", "")).strip()
+    kyc_name = ""
+    if kyc.document_data:
+        kyc_name = str(kyc.document_data.get("full_name", "")).strip()
+
+    if extracted_name and kyc_name:
+        sim = _name_similarity(extracted_name, kyc_name)
+        if sim < 0.4:
+            issues.append(
+                f"Name mismatch: uploaded '{extracted_name}', "
+                f"on-record '{kyc_name}' (similarity {sim:.0%})"
+            )
+
+    if issues:
+        return (
+            False,
+            f"KYC identity mismatch ({kyc_type}) — " + "; ".join(issues),
+            0.65,
+        )
+
+    return True, f"{kyc_type} identity verified against policy KYC record.", 0.0
 
 
 # ── Template validation rules ─────────────────────────────────────────────────
@@ -607,57 +759,95 @@ async def get_claim_document_bytes(
     return raw, doc
 
 
-# ── Quick relevance check (no DB writes) ─────────────────────────────────────
+# ── Inline OCR preview (no DB writes) ────────────────────────────────────────
 
-async def validate_document_relevance(
+async def inline_ocr_preview(
     content: bytes,
     content_type: str,
     document_type_code: str,
     claim_type: str,
+    requirement: DocumentRequirement | None = None,
 ) -> dict[str, Any]:
     """
-    Fast Gemini relevance check — no DB writes, no OCR extraction.
-    Returns whether the uploaded file looks like an insurance document
-    of the expected type/claim category.
+    Combined relevance check + full field extraction in a single Gemini call.
+    No DB writes.  Returns is_relevant, reason, detected_type, extracted_fields,
+    confidence and missing_fields so the frontend can show the result inline
+    and let the user edit before the final upload.
     """
-    prompt = f"""You are an insurance document validator.
+    if requirement and requirement.extraction_template:
+        prompt = build_extraction_prompt(
+            extraction_template=requirement.extraction_template,
+            document_type_code=document_type_code,
+            display_name=requirement.display_name or document_type_code,
+        )
+        template = requirement.extraction_template
+    else:
+        prompt = _generic_fallback_prompt(document_type_code)
+        template = None
 
-Examine this document carefully and determine:
-1. Is it genuinely related to insurance — specifically a {claim_type} insurance claim?
-2. Does it match or closely match the expected document type: "{document_type_code}"?
+    extraction = await _call_gemini(content, content_type, prompt)
+    fields: dict[str, Any] = extraction.get("fields", {})
 
-Respond ONLY with a valid JSON object (no markdown fences):
-{{
-  "is_relevant": true,
-  "reason": "brief 1-2 sentence explanation",
-  "detected_type": "what this document actually appears to be"
-}}
+    # ── Extract meta-fields injected by the prompt ──────────────────────────
+    wrong_type = bool(fields.pop("_wrong_document_type", False))
+    detected_type = str(fields.pop("_detected_type", None) or document_type_code)
+    extraction_notes = fields.pop("_extraction_notes", None)
 
-Set "is_relevant" to FALSE only if:
-- The document is completely irrelevant to insurance (e.g. a food photo, social media screenshot, blank page, personal selfie, shopping receipt, utility bill for a health claim, etc.)
-- The document clearly belongs to a different insurance domain (e.g. a motor RC book for a HEALTH claim, or a discharge summary for a MOTOR claim)
+    # ── Compute missing required fields + quality confidence ─────────────────
+    missing_fields: list[str] = []
+    if template:
+        required_keys = [
+            f["key"]
+            for f in template.get("fields", [])
+            if f.get("required", False)
+        ]
+        missing_fields = [k for k in required_keys if not fields.get(k)]
+        opt_keys = [
+            f["key"] for f in template.get("fields", []) if not f.get("required", False)
+        ]
+        req_score = (
+            (len(required_keys) - len(missing_fields)) / len(required_keys)
+            if required_keys else 1.0
+        )
+        opt_score = (
+            sum(1 for k in opt_keys if fields.get(k)) / len(opt_keys)
+            if opt_keys else 1.0
+        )
+        confidence = round(req_score * 0.85 + opt_score * 0.15, 4)
+    else:
+        confidence = round(min(0.80, 0.40 + len(fields) * 0.04), 4) if fields else 0.0
 
-Set "is_relevant" to TRUE if it looks like a reasonable insurance document for {claim_type}, even if formatting differs or image quality is poor.
-"""
-    result = await _call_gemini(content, content_type, prompt)
-    fields = result.get("fields", {})
-
-    # If Gemini returned nothing, be lenient — accept for manual review
-    if not fields:
+    # ── Lenient fallback when Gemini returns nothing ──────────────────────────
+    if not fields and not wrong_type:
         return {
             "is_relevant": True,
-            "reason": "Could not automatically verify — accepted for manual review.",
+            "reason": "Could not verify automatically — accepted for manual review.",
             "detected_type": document_type_code,
+            "extracted_fields": {},
+            "confidence": 0.0,
+            "missing_fields": [],
         }
 
-    is_relevant = fields.get("is_relevant", True)
-    reason = fields.get("reason", "Document appears relevant.")
-    detected_type = fields.get("detected_type", document_type_code)
+    if wrong_type:
+        reason = (
+            str(extraction_notes)
+            if extraction_notes
+            else f"Wrong document type — appears to be '{detected_type}', expected {document_type_code}."
+        )
+    else:
+        reason = (
+            str(extraction_notes)
+            if extraction_notes
+            else f"Extracted {len(fields)} fields with {confidence * 100:.0f}% completeness."
+        )
 
     return {
-        "is_relevant": bool(is_relevant),
-        "reason": str(reason),
-        "detected_type": str(detected_type),
+        "is_relevant": not wrong_type,
+        "reason": reason,
+        "detected_type": detected_type,
+        "extracted_fields": fields,
+        "completeness": confidence,
+        "missing_fields": missing_fields,
     }
 
 

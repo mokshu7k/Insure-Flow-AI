@@ -1,5 +1,5 @@
 """
-Create the 'insureflow' database on GCP Cloud SQL if it doesn't exist.
+Verify connectivity to the 'insureflow' database.
 """
 import asyncio
 from sqlalchemy import text
@@ -7,31 +7,18 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.config import settings
 
 
-async def create_database():
-    # Connect to the default 'postgres' database first
-    db_url = settings.DATABASE_URL.replace("/insureflow", "/postgres")
-    
-    engine = create_async_engine(db_url, echo=False, isolation_level="AUTOCOMMIT")
-    
+async def check_database():
+    engine = create_async_engine(settings.DATABASE_URL, echo=False)
     try:
         async with engine.connect() as conn:
-            # Check if database exists
-            result = await conn.execute(
-                text("SELECT 1 FROM pg_database WHERE datname = 'insureflow'")
-            )
-            exists = result.fetchone() is not None
-            
-            if exists:
-                print("✓ Database 'insureflow' already exists")
-            else:
-                print("Creating database 'insureflow'...")
-                await conn.execute(text("CREATE DATABASE insureflow"))
-                print("✓ Database 'insureflow' created successfully")
+            result = await conn.execute(text("SELECT current_database()"))
+            db_name = result.scalar()
+            print(f"✓ Connected to database: {db_name}")
     except Exception as e:
-        print(f"✗ Error: {e}")
+        print(f"✗ Error connecting to database: {e}")
     finally:
         await engine.dispose()
 
 
 if __name__ == "__main__":
-    asyncio.run(create_database())
+    asyncio.run(check_database())
