@@ -75,6 +75,7 @@ export interface LayerScore {
     score: number;
     flags: string[];
     layer: string;
+    weight?: number;
     method?: string;
     ai_degraded?: boolean;
 }
@@ -92,6 +93,12 @@ export interface FraudAssessment {
     behavioral_flags: string[];
     document_flags: string[];
     network_flags: string[];
+    feature_snapshot: {
+        manual_review_required?: boolean;
+        manual_review_triggers?: string[];
+        critical_signals?: string[];
+        analyzed_document_id?: string;
+    } | null;
     config_version: string | null;
     ai_degraded_mode: boolean | null;
     ml_model_used: boolean | null;

@@ -23,6 +23,8 @@ class FraudAssessmentResponse(BaseModel):
     layer_scores: Optional[dict[str, Any]] = None    # Per-layer complete info (score, flags, method, etc.)
     layer_details: Optional[dict[str, Any]] = None   # Full per-layer raw output (flags, method, ai_degraded)
     explanation_text: Optional[str]
+    feature_snapshot: Optional[dict[str, Any]] = None
+    config_version: Optional[str] = None
     ai_degraded_mode: bool
     ml_model_used: bool
     created_at: datetime

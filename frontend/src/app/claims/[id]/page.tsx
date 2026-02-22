@@ -15,11 +15,12 @@ import { complianceService } from "@/services/complianceService";
 import type { Claim, FraudAssessment, ClaimDocumentResponse, AuditLogEntry } from "@/types";
 import { canTransitionTo } from "@/types";
 import {
-    ArrowLeft, Zap, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
+    ArrowLeft, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
     ChevronDown, ChevronUp, Send, Loader2, RefreshCw, Flag, Clock,
     CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X
 } from "lucide-react";
 import { ClaimReportRenderer } from "@/components/ui/ClaimReportRenderer";
+import { FraudAgentPanel } from "@/components/ui/FraudAgentPanel";
 
 function formatCurrency(n: number | null) {
     if (!n) return "—";
@@ -32,40 +33,7 @@ function formatDateTime(dt: string | null | undefined) {
     return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-const LAYER_LABELS: Record<string, string> = {
-    deterministic: "Rules", statistical: "Statistics", behavioral: "Behavior",
-    document: "Documents", network: "Network", narrative: "Narrative (AI)",
-};
-
-function LayerScoreRow({ name, score, flags }: { name: string; score: number; flags: string[] }) {
-    const [expanded, setExpanded] = useState(false);
-    const color = score >= 0.7 ? "var(--crimson)" : score >= 0.4 ? "var(--amber)" : "var(--green)";
-    return (
-        <div className="layer-row" style={{ display: "block", padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "130px 1fr 60px 20px", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 500 }}>{LAYER_LABELS[name] || name}</span>
-                <div className="score-bar">
-                    <div className="score-bar-fill" style={{ width: `${score * 100}%`, background: color }} />
-                </div>
-                <span className="mono" style={{ fontSize: "0.75rem", color, textAlign: "right" }}>{(score * 100).toFixed(0)}%</span>
-                {flags.length > 0 && (
-                    <button onClick={() => setExpanded(!expanded)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex" }}>
-                        {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
-                )}
-            </div>
-            {expanded && flags.length > 0 && (
-                <div style={{ marginTop: 6, paddingLeft: 0, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {flags.map((f, i) => (
-                        <span key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 3, padding: "2px 6px", color: "var(--text-secondary)" }}>
-                            {f}
-                        </span>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
+/* LayerScoreRow removed — replaced by FraudAgentPanel component */
 
 function composeFlagReason(assessment: FraudAssessment | null, claim: { claim_type: string; description?: string | null } | null): string {
     if (!assessment) return "";
@@ -126,7 +94,6 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [assessment, setAssessment] = useState<FraudAssessment | null>(null);
     const [documents, setDocuments] = useState<ClaimDocumentResponse[]>([]);
     const [loading, setLoading] = useState(true);
-    const [fraudLoading, setFraudLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -289,18 +256,7 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
             .finally(() => setTimelineLoading(false));
     }, [id, claim?.status]); // re-fetch when status changes
 
-    const runFraud = async () => {
-        setFraudLoading(true);
-        try {
-            const a = await fraudService.analyze(id);
-            setAssessment(a);
-            setClaim((prev) => prev ? { ...prev, fraud_score: a.fraud_score } : prev);
-        } catch (e: unknown) {
-            setError("Fraud analysis failed");
-        } finally {
-            setFraudLoading(false);
-        }
-    };
+    /* runFraud removed — FraudAgentPanel handles analysis internally */
 
     const changeStatus = async (status: string, adjuster_notes?: string) => {
         setActionLoading(true);
@@ -618,77 +574,14 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                 </div>
                             )}
                         <div style={{ flex: 1, overflowY: "auto", padding: 20, display: rightTab === "fraud" || !canAction ? "block" : "none" }}>
-                            {/* Fraud score header */}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                                    Fraud Intelligence
-                                </div>
-                                {canAction && (
-                                    <button className="btn btn-ghost" onClick={runFraud} disabled={fraudLoading} style={{ padding: "4px 10px" }}>
-                                        <Zap size={13} />
-                                        {fraudLoading ? "Analyzing…" : assessment ? "Re-run" : "Analyze"}
-                                    </button>
-                                )}
-                            </div>
-
-                            {!assessment && !fraudLoading && (
-                                <div style={{ textAlign: "center", padding: "30px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                                    {canAction ? "Run fraud analysis to see intelligence" : "No fraud assessment available"}
-                                </div>
-                            )}
-
-                            {fraudLoading && (
-                                <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                                    <div className="skeleton" style={{ height: 80, marginBottom: 12 }} />
-                                    {[...Array(6)].map((_, i) => <div key={i} className="skeleton" style={{ height: 12, marginBottom: 10 }} />)}
-                                </div>
-                            )}
-
-                            {assessment && !fraudLoading && (
-                                <>
-                                    <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
-                                        <FraudScoreBadge score={assessment.fraud_score} label />
-                                    </div>
-
-                                    {/* Risk level */}
-                                    {assessment.risk_level && (
-                                        <div style={{ textAlign: "center", marginBottom: 16 }}>
-                                            <span className={`pill ${assessment.risk_level === "HIGH" || assessment.risk_level === "VERY_HIGH" || assessment.risk_level === "CRITICAL" ? "pill-rejected" : assessment.risk_level === "MEDIUM" ? "pill-review" : "pill-approved"}`}>
-                                                {assessment.risk_level} RISK
-                                            </span>
-                                        </div>
-                                    )}
-
-                                    {/* Layer scores */}
-                                    {assessment.layer_scores && (
-                                        <div style={{ marginBottom: 16 }}>
-                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
-                                                Layer Breakdown
-                                            </div>
-                                            {Object.entries(assessment.layer_scores).map(([name, layer]) => (
-                                                <LayerScoreRow key={name} name={name} score={layer.score} flags={layer.flags || []} />
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* AI Explanation */}
-                                    {assessment.explanation_text && (
-                                        <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 4, padding: 14, marginBottom: 14 }}>
-                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8, fontWeight: 600 }}>
-                                                AI Explanation
-                                            </div>
-                                            <p style={{ fontSize: "0.8125rem", color: "var(--text-secondary)", lineHeight: 1.7 }}>{assessment.explanation_text}</p>
-                                        </div>
-                                    )}
-
-                                    {/* Meta */}
-                                    <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)", display: "flex", flexDirection: "column", gap: 3 }}>
-                                        {assessment.config_version && <span>Config: {assessment.config_version}</span>}
-                                        {assessment.ai_degraded_mode && <span style={{ color: "var(--amber)" }}>⚠ AI degraded mode</span>}
-                                        <span>Assessed: {formatDateTime(assessment.created_at)}</span>
-                                    </div>
-                                </>
-                            )}
+                            <FraudAgentPanel
+                                claimId={id}
+                                assessment={assessment}
+                                documents={documents}
+                                loading={false}
+                                onAssessmentChange={(a) => { setAssessment(a); }}
+                                onFraudScoreChange={(s) => { setClaim((prev) => prev ? { ...prev, fraud_score: s } : prev); }}
+                            />
                         </div>{/* end fraud tab */}
 
                             {/* Claim Report tab — auto-generated report + follow-up chat */}

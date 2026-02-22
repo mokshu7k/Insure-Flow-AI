@@ -30,6 +30,22 @@ async def analyze_claim(
     return assessment
 
 
+@router.post("/agent-analyze/{claim_id}/{document_id}", response_model=FraudAssessmentResponse, status_code=201)
+async def agent_analyze_claim(
+    claim_id: str,
+    document_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Run the 6-node LangGraph fraud agent on a specific document."""
+    from app.core.rbac import require_any_role
+    require_any_role(["INSURER_ADMIN", "CLAIM_ADJUSTER"])(current_user)
+    assessment = await fraud_service.run_fraud_agent_analysis(
+        claim_id, document_id, str(current_user.id), current_user.role, db,
+    )
+    return assessment
+
+
 @router.get("/{claim_id}", response_model=Optional[FraudAssessmentResponse])
 async def get_assessment(
     claim_id: str,
