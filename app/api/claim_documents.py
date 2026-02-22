@@ -149,3 +149,49 @@ async def download_claim_document(
             "Content-Disposition": f'attachment; filename="{doc.original_filename or doc_id}"'
         },
     )
+
+
+@router.get("/{doc_id}/download-url")
+async def get_document_download_url(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return a short-lived signed GCS URL for admin / adjuster downloads.
+
+    - Admins and adjusters: receive a signed URL (60-min expiry) **or** a
+      fallback indicator to use the ``/download`` endpoint when GCS signed
+      URLs are unavailable (e.g. ADC without signing permission).
+    - Customers: receive ``403`` — they should use ``/download`` instead.
+    """
+    from sqlalchemy import select as _select
+    from app.models.claim_document import ClaimDocument
+    from fastapi import HTTPException
+
+    # Only admins / adjusters may use the signed-URL shortcut
+    if current_user.role not in ("INSURER_ADMIN", "CLAIM_ADJUSTER", "AUDITOR"):
+        raise HTTPException(status_code=403, detail="Not authorised to request a signed URL")
+
+    res = await db.execute(_select(ClaimDocument).where(ClaimDocument.id == uuid.UUID(doc_id)))
+    doc = res.scalar_one_or_none()
+    if not doc:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(status_code=404, detail="Document not found")
+
+    signed_url: str | None = None
+    if doc.gcs_path:
+        import asyncio
+        from app.services import gcs_service as _gcs_svc
+        loop = asyncio.get_event_loop()
+        signed_url = await loop.run_in_executor(
+            None, _gcs_svc.generate_signed_url, doc.gcs_path
+        )
+
+    return {
+        "doc_id": doc_id,
+        "gcs_path": doc.gcs_path,
+        "download_url": signed_url,
+        # When signed_url is None the caller should fall back to the /download endpoint
+        "fallback_endpoint": f"/api/claim-documents/{doc_id}/download",
+        "original_filename": doc.original_filename,
+    }

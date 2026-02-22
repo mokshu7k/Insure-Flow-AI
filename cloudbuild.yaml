@@ -63,7 +63,7 @@ steps:
       - --concurrency=80
       - --timeout=60
       - --set-secrets=SECRET_KEY=insureflow-secret-key:latest,ENCRYPTION_KEY=insureflow-encryption-key:latest,QR_SECRET_KEY=insureflow-qr-secret-key:latest,DATABASE_URL=insureflow-database-url:latest,GCP_API_KEY=insureflow-gcp-api-key:latest
-      - --set-env-vars=ALLOWED_ORIGINS=https://YOUR_FRONTEND_DOMAIN,COOKIE_SECURE=true,LOG_LEVEL=info,GOOGLE_CLOUD_PROJECT=techfiesta-487920
+      - --set-env-vars=ALLOWED_ORIGINS=https://YOUR_FRONTEND_DOMAIN,COOKIE_SECURE=true,LOG_LEVEL=info,GOOGLE_CLOUD_PROJECT=techfiesta-487920,GCS_BUCKET_NAME=techfiesta-487920-documents
 
 images:
   - "${_REGISTRY}/${_SERVICE}:${SHORT_SHA}"

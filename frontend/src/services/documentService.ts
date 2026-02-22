@@ -68,4 +68,37 @@ export const documentService = {
         api.patch<ClaimDocumentResponse>(`/claim-documents/${docId}/extracted-data`, {
             extracted_data: extractedData,
         }).then((r) => r.data),
+
+    /**
+     * Download a claim document (streams via backend, accessible to the
+     * document owner, admins and adjusters).
+     * Triggers a browser file-save automatically.
+     */
+    downloadClaimDoc: async (docId: string, filename?: string): Promise<void> => {
+        const response = await api.get(`/claim-documents/${docId}/download`, {
+            responseType: "blob",
+            timeout: 60_000,
+        });
+        const contentDisposition: string = response.headers["content-disposition"] ?? "";
+        const matched = contentDisposition.match(/filename="([^"]+)"/);
+        const name = filename ?? matched?.[1] ?? `document-${docId}`;
+        const url = URL.createObjectURL(response.data as Blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+
+    /**
+     * Request a signed GCS download URL for a document (admin / adjuster only).
+     * Returns the signed URL, or null if GCS signed URLs are unavailable
+     * (caller should fall back to downloadClaimDoc in that case).
+     */
+    getDocumentDownloadUrl: (docId: string) =>
+        api.get<{ doc_id: string; gcs_path: string | null; download_url: string | null; fallback_endpoint: string; original_filename: string | null }>(
+            `/claim-documents/${docId}/download-url`
+        ).then((r) => r.data),
 };

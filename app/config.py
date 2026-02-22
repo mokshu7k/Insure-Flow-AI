@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     DATABASE_URL: str    # postgresql+asyncpg://...
     GCP_API_KEY: str = ""
 
+    # ── GCS document storage ─────────────────────────────────────────────────
+    # GCS_BUCKET_NAME: the GCS bucket to store claim documents in.
+    # Leave empty ("") to disable GCS and use local-only encrypted storage.
+    GCS_BUCKET_NAME: str = ""
+    # Optional path to a service-account JSON key file.
+    # Leave empty to use Application Default Credentials (ADC) — recommended
+    # for Cloud Run (Workload Identity) and local dev with `gcloud auth`.
+    GCS_CREDENTIALS_JSON: str = ""
+
     # ── Environment-specific (overrides in .env, sane defaults here) ──────────
     COOKIE_SECURE: bool = True      # False for local HTTP dev
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]

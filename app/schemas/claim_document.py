@@ -32,6 +32,7 @@ class ClaimDocumentResponse(BaseModel):
     original_filename: Optional[str]
     content_type: Optional[str]
     storage_path: str
+    gcs_path: Optional[str]  # GCS blob name; None when GCS is not configured
 
     # ── OCR / Extraction ──
     ocr_status: str                              # PENDING | PROCESSING | COMPLETED | FAILED

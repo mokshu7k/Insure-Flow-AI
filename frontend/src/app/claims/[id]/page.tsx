@@ -18,7 +18,7 @@ import {
     ArrowLeft, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
     ChevronDown, ChevronUp, Send, Loader2, RefreshCw, Flag, Clock,
     CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X,
-    BookOpen, Search, Filter, ChevronLeft, ChevronRight, FilePlus2,
+    BookOpen, Search, Filter, ChevronLeft, ChevronRight, FilePlus2,Download
 } from "lucide-react";
 import { ClaimReportRenderer } from "@/components/ui/ClaimReportRenderer";
 import { FraudAgentPanel } from "@/components/ui/FraudAgentPanel";
@@ -111,6 +111,17 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     // Admin doc-refresh polling
     const adminPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const [docsRefreshing, setDocsRefreshing] = useState(false);
+    const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
+    const downloadDoc = async (docId: string, filename?: string | null) => {
+        setDownloadingDocId(docId);
+        try {
+            await documentService.downloadClaimDoc(docId, filename ?? undefined);
+        } catch {
+            setDocError("Download failed. Please try again.");
+        } finally {
+            setDownloadingDocId(null);
+        }
+    };
     // Right-panel tabs
     const [rightTab, setRightTab] = useState<"fraud" | "agent">("fraud");
     // Adjuster report + follow-up chat state
@@ -554,6 +565,21 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                         </button>
                                         {expandedDocIds.has(doc.id.toString()) && (
                                             <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
+                                                {/* Download button — available to all roles (customers get their own doc; admins/adjusters get any doc) */}
+                                                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                                                    <button
+                                                        type="button"
+                                                        className="btn btn-ghost"
+                                                        disabled={downloadingDocId === doc.id.toString()}
+                                                        onClick={() => downloadDoc(doc.id.toString(), doc.original_filename)}
+                                                        style={{ fontSize: "0.75rem", gap: 6 }}
+                                                    >
+                                                        {downloadingDocId === doc.id.toString()
+                                                            ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                                                            : <Download size={12} />}
+                                                        Download
+                                                    </button>
+                                                </div>
                                                 {(doc.ocr_status ?? "").toUpperCase() === "PENDING" ? (
                                                     <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--blue)", fontSize: "0.75rem" }}>
                                                         <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />

@@ -78,6 +78,8 @@ spec:
                 secretKeyRef:
                   name: insureflow-gcp-api-key
                   key: latest
+            - name: GCS_BUCKET_NAME
+              value: "techfiesta-487920-documents"
 
           livenessProbe:
             httpGet:

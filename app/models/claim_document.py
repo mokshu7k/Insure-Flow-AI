@@ -112,6 +112,12 @@ class ClaimDocument(Base):
     entity_gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
     entity_registration_no: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
+    # ── GCS storage ──
+    # Blob name inside GCS_BUCKET_NAME for the original (unencrypted) file.
+    # Format: "claim-documents/{claim_id}/{doc_id}/{original_filename}"
+    # None means GCS upload is pending or not configured (local-only storage).
+    gcs_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # ── KYC matching (for identity docs) ──
     kyc_match_status: Mapped[str] = mapped_column(
         String(32), default="NOT_APPLICABLE", nullable=False

@@ -88,17 +88,34 @@ async def upload_claim_document(
             f"File too large (max {settings.MAX_UPLOAD_SIZE // 1024 // 1024} MB)"
         )
 
-    # Encrypt + store
+    # Encrypt + store locally (always — local copy is the authoritative fallback)
     encrypted = _get_fernet().encrypt(content)
     storage_dir = Path(settings.ENCRYPTED_STORAGE_DIR) / claim_id
     storage_dir.mkdir(parents=True, exist_ok=True)
     file_path = storage_dir / f"{uuid.uuid4()}.enc"
     file_path.write_bytes(encrypted)
 
+    # Pre-generate the document UUID so the GCS blob name can include it
+    doc_uuid = uuid.uuid4()
+
+    # ── Upload original bytes to GCS ─────────────────────────────────────────
+    # Runs in a thread pool so it doesn't block the event loop.
+    # Returns None (no error raised) if GCS is not configured or unavailable.
+    from app.services import gcs_service as _gcs_svc  # noqa: PLC0415
+    _blob_name = _gcs_svc.build_blob_name(claim_id, str(doc_uuid), file.filename)
+    _loop = asyncio.get_event_loop()
+    gcs_blob_name: str | None = await _loop.run_in_executor(
+        None, _gcs_svc.upload_bytes, _blob_name, content, file.content_type or "application/octet-stream"
+    )
+    if gcs_blob_name:
+        logger.info("GCS upload OK for claim_doc %s → gs://%s", doc_uuid, gcs_blob_name)
+    else:
+        logger.info("GCS not configured or unavailable — claim_doc %s stored locally only", doc_uuid)
+
     req_uuid = uuid.UUID(document_requirement_id) if document_requirement_id else None
 
     doc = ClaimDocument(
-        id=uuid.uuid4(),
+        id=doc_uuid,
         claim_id=uuid.UUID(claim_id),
         uploader_id=uuid.UUID(uploader_id),
         document_type_code=document_type_code,
@@ -109,6 +126,7 @@ async def upload_claim_document(
         ocr_status="PENDING",
         validation_status="PENDING",
         requires_manual_review=True,
+        gcs_path=gcs_blob_name,  # None when GCS is not configured
     )
 
     # ── If pre-extracted data is provided: skip background OCR ──────────────
@@ -775,6 +793,21 @@ async def get_claim_document_bytes(
         if not claim or str(claim.user_id) != requester_id:
             raise PermissionDeniedError("Not your document")
 
+    # ── Prefer GCS (original file, no decryption step) ──────────────────────────
+    if doc.gcs_path:
+        from app.services import gcs_service as _gcs_svc  # noqa: PLC0415
+        _loop = asyncio.get_event_loop()
+        gcs_data: bytes | None = await _loop.run_in_executor(
+            None, _gcs_svc.download_bytes, doc.gcs_path
+        )
+        if gcs_data is not None:
+            return gcs_data, doc
+        logger.warning(
+            "GCS download failed for doc %s (path=%s) — falling back to local",
+            doc_id, doc.gcs_path,
+        )
+
+    # ── Fall back to local encrypted storage ──────────────────────────────────
     encrypted = Path(doc.storage_path).read_bytes()
     raw = _get_fernet().decrypt(encrypted)
     return raw, doc

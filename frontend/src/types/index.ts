@@ -119,6 +119,7 @@ export interface ClaimDocumentResponse {
     original_filename: string | null;
     content_type: string | null;
     storage_path: string;
+    gcs_path: string | null;          // GCS blob name; null when GCS is not configured
     // OCR / Extraction
     ocr_status: string;            // PENDING | PROCESSING | COMPLETED | FAILED
     extracted_data: Record<string, unknown> | null;
