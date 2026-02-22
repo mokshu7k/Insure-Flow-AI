@@ -18,7 +18,7 @@ import {
     ArrowLeft, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
     ChevronDown, ChevronUp, Send, Loader2, RefreshCw, Flag, Clock,
     CircleDot, CircleCheck, CircleX, FileUp, ShieldAlert, Sparkles, X,
-    BookOpen, Search, Filter, ChevronLeft, ChevronRight,
+    BookOpen, Search, Filter, ChevronLeft, ChevronRight, FilePlus2,
 } from "lucide-react";
 import { ClaimReportRenderer } from "@/components/ui/ClaimReportRenderer";
 import { FraudAgentPanel } from "@/components/ui/FraudAgentPanel";
@@ -103,6 +103,14 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [expandedDocIds, setExpandedDocIds] = useState<Set<string>>(new Set());
     const toggleDoc = (docId: string) => setExpandedDocIds((prev) => { const next = new Set(prev); next.has(docId) ? next.delete(docId) : next.add(docId); return next; });
     const [docError, setDocError] = useState<string | null>(null);
+    const [uploadSuccess, setUploadSuccess] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    // Request document (admin → customer)
+    const [requestDocType, setRequestDocType] = useState("INVOICE");
+    const [requestDocNote, setRequestDocNote] = useState("");
+    // Admin doc-refresh polling
+    const adminPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const [docsRefreshing, setDocsRefreshing] = useState(false);
     // Right-panel tabs
     const [rightTab, setRightTab] = useState<"fraud" | "agent">("fraud");
     // Adjuster report + follow-up chat state
@@ -249,6 +257,27 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     // Stop polling when component unmounts (navigation away from the page)
     useEffect(() => () => { stopPolling(); }, [stopPolling]);
 
+    // Admin: poll every 10 s for newly uploaded customer documents
+    useEffect(() => {
+        if (!canAction) return;
+        adminPollRef.current = setInterval(async () => {
+            try {
+                const refreshed = await documentService.listClaimDocs(id);
+                setDocuments((prev) => {
+                    // Only update state if the list actually changed (count or ids)
+                    const prevIds = prev.map((d) => d.id).join(",");
+                    const nextIds = refreshed.map((d) => d.id).join(",");
+                    return prevIds !== nextIds ? refreshed : prev;
+                });
+                startPollingIfNeeded(refreshed);
+            } catch { /* ignore */ }
+        }, 10_000);
+        return () => {
+            if (adminPollRef.current) clearInterval(adminPollRef.current);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [canAction, id]);
+
     // Load timeline from audit trail
     useEffect(() => {
         if (!id) return;
@@ -291,6 +320,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const handleUpload = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!uploadFile) return;
+        setDocError(null);
+        setUploadSuccess(false);
         setUploading(true);
         try {
             const doc = await documentService.uploadClaimDoc(id, uploadFile, uploadType);
@@ -300,11 +331,24 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                 return next;
             });
             setUploadFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+            setUploadSuccess(true);
+            setTimeout(() => setUploadSuccess(false), 3000);
         } catch {
-            setError("Upload failed");
+            setDocError("Upload failed — please check the file and try again.");
         } finally {
             setUploading(false);
         }
+    };
+
+    const handleRequestDocument = async () => {
+        if (!requestDocType) return;
+        const docLabel = requestDocType.replace(/_/g, " ");
+        const note = requestDocNote.trim()
+            ? `Please upload the following document: ${docLabel}\n\n${requestDocNote.trim()}`
+            : `Please upload the following document: ${docLabel}`;
+        setRequestDocNote("");
+        await changeStatus("MANUAL_REVIEW_REQUIRED", note);
     };
 
     if (error) return (
@@ -446,9 +490,27 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
 
                             {/* Documents */}
                             <div className="panel" style={{ padding: 18, marginBottom: 16 }}>
-                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14, display: "flex", justifyContent: "space-between" }}>
-                                    Documents
-                                    <span style={{ color: "var(--text-primary)" }}>{documents.length}</span>
+                                <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span>Documents</span>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <span style={{ color: "var(--text-primary)" }}>{documents.length}</span>
+                                        <button
+                                            onClick={async () => {
+                                                setDocsRefreshing(true);
+                                                try {
+                                                    const refreshed = await documentService.listClaimDocs(id);
+                                                    setDocuments(refreshed);
+                                                    startPollingIfNeeded(refreshed);
+                                                } catch { /* ignore */ } finally {
+                                                    setDocsRefreshing(false);
+                                                }
+                                            }}
+                                            title="Refresh documents"
+                                            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", color: "var(--text-muted)", borderRadius: 4 }}
+                                        >
+                                            <RefreshCw size={12} style={docsRefreshing ? { animation: "spin 0.8s linear infinite" } : undefined} />
+                                        </button>
+                                    </div>
                                 </div>
                                 {documents.length === 0 && (
                                     <div style={{ color: "var(--text-muted)", fontSize: "0.8125rem", textAlign: "center", padding: "16px 0" }}>No documents uploaded</div>
@@ -537,22 +599,153 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     </div>
                                 ))}
 
-                                {/* Upload form */}
-                                <form onSubmit={handleUpload} style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "flex-end" }}>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.04em" }}>Upload document</div>
-                                        <input type="file" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }} />
+                                {/* ── Customer: Upload Document ── */}
+                                {!canAction && (
+                                    <form onSubmit={handleUpload} style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12 }}>
+                                            <div style={{ width: 26, height: 26, borderRadius: 7, background: "rgba(26,86,219,0.08)", border: "1px solid rgba(26,86,219,0.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                                <Upload size={13} color="#1a56db" />
+                                            </div>
+                                            <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)" }}>Upload Document</span>
+                                        </div>
+
+                                        {/* Document type */}
+                                        <div style={{ marginBottom: 10 }}>
+                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Document Type</div>
+                                            <select
+                                                className="input"
+                                                style={{ width: "100%", height: 34, fontSize: "0.8125rem" }}
+                                                value={uploadType}
+                                                onChange={(e) => setUploadType(e.target.value)}
+                                            >
+                                                {["INVOICE", "PRESCRIPTION", "MEDICAL_REPORT", "DISCHARGE_SUMMARY", "POLICE_REPORT", "VEHICLE_RC", "ESTIMATE", "OTHER"].map((t) => (
+                                                    <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* File picker styled as a drop zone */}
+                                        <label style={{
+                                            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                                            gap: 6, padding: "18px 12px", marginBottom: 10,
+                                            border: `2px dashed ${uploadFile ? "#1a56db" : "var(--border)"}`,
+                                            borderRadius: 10,
+                                            background: uploadFile ? "rgba(26,86,219,0.04)" : "var(--bg-surface)",
+                                            cursor: "pointer",
+                                            transition: "all 0.15s",
+                                        }}>
+                                            <FileUp size={20} color={uploadFile ? "#1a56db" : "var(--text-muted)"} />
+                                            <span style={{ fontSize: "0.75rem", color: uploadFile ? "#1a56db" : "var(--text-muted)", fontWeight: 500, textAlign: "center" }}>
+                                                {uploadFile ? uploadFile.name : "Click to choose a file"}
+                                            </span>
+                                            {uploadFile && (
+                                                <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>
+                                                    {(uploadFile.size / 1024).toFixed(1)} KB
+                                                </span>
+                                            )}
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                onChange={(e) => { setUploadFile(e.target.files?.[0] || null); setDocError(null); setUploadSuccess(false); }}
+                                                style={{ display: "none" }}
+                                            />
+                                        </label>
+
+                                        <button
+                                            type="submit"
+                                            disabled={!uploadFile || uploading}
+                                            style={{
+                                                width: "100%", height: 36,
+                                                display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                                                background: (!uploadFile || uploading) ? "var(--bg-surface)" : "#1a56db",
+                                                color: (!uploadFile || uploading) ? "var(--text-muted)" : "#fff",
+                                                border: `1px solid ${(!uploadFile || uploading) ? "var(--border)" : "#1a56db"}`,
+                                                borderRadius: 8, fontSize: "0.8125rem", fontWeight: 600,
+                                                cursor: (!uploadFile || uploading) ? "not-allowed" : "pointer",
+                                                transition: "all 0.15s",
+                                            }}
+                                        >
+                                            {uploading
+                                                ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Uploading…</>
+                                                : <><Upload size={13} /> Upload Document</>
+                                            }
+                                        </button>
+
+                                        {docError && (
+                                            <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 7, background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)", fontSize: "0.75rem", color: "var(--crimson)", display: "flex", alignItems: "center", gap: 6 }}>
+                                                <XCircle size={12} style={{ flexShrink: 0 }} /> {docError}
+                                            </div>
+                                        )}
+                                        {uploadSuccess && (
+                                            <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 7, background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.18)", fontSize: "0.75rem", color: "#059669", display: "flex", alignItems: "center", gap: 6 }}>
+                                                <CheckCircle size={12} style={{ flexShrink: 0 }} /> Document uploaded successfully.
+                                            </div>
+                                        )}
+                                    </form>
+                                )}
+
+                                {/* ── Admin/Adjuster: Request Document ── */}
+                                {canAction && (
+                                    <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12 }}>
+                                            <div style={{ width: 26, height: 26, borderRadius: 7, background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                                <FilePlus2 size={13} color="#d97706" />
+                                            </div>
+                                            <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "var(--text-primary)" }}>Request Document</span>
+                                        </div>
+
+                                        {/* Document type */}
+                                        <div style={{ marginBottom: 8 }}>
+                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Document Type</div>
+                                            <select
+                                                className="input"
+                                                style={{ width: "100%", height: 34, fontSize: "0.8125rem" }}
+                                                value={requestDocType}
+                                                onChange={(e) => setRequestDocType(e.target.value)}
+                                            >
+                                                {["INVOICE", "PRESCRIPTION", "MEDICAL_REPORT", "DISCHARGE_SUMMARY", "POLICE_REPORT", "VEHICLE_RC", "ESTIMATE", "OTHER"].map((t) => (
+                                                    <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Optional note */}
+                                        <div style={{ marginBottom: 10 }}>
+                                            <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>Note to Customer <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></div>
+                                            <textarea
+                                                className="input"
+                                                rows={2}
+                                                style={{ width: "100%", resize: "none", fontSize: "0.8125rem", lineHeight: 1.5, padding: "8px 10px", boxSizing: "border-box" }}
+                                                value={requestDocNote}
+                                                onChange={(e) => setRequestDocNote(e.target.value)}
+                                                placeholder="Explain what is needed and why…"
+                                            />
+                                        </div>
+
+                                        <button
+                                            onClick={handleRequestDocument}
+                                            disabled={actionLoading}
+                                            style={{
+                                                width: "100%", height: 36,
+                                                display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                                                background: actionLoading ? "var(--bg-surface)" : "#d97706",
+                                                color: actionLoading ? "var(--text-muted)" : "#fff",
+                                                border: `1px solid ${actionLoading ? "var(--border)" : "#d97706"}`,
+                                                borderRadius: 8, fontSize: "0.8125rem", fontWeight: 600,
+                                                cursor: actionLoading ? "not-allowed" : "pointer",
+                                                transition: "all 0.15s",
+                                            }}
+                                        >
+                                            {actionLoading
+                                                ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> Sending…</>
+                                                : <><Send size={13} /> Send Request to Customer</>
+                                            }
+                                        </button>
+                                        <p style={{ margin: "8px 0 0", fontSize: "0.6875rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                                            Customer will see a notification on their claim and can upload the document directly.
+                                        </p>
                                     </div>
-                                    <select className="input" style={{ width: "auto" }} value={uploadType} onChange={(e) => setUploadType(e.target.value)}>
-                                        {["INVOICE", "PRESCRIPTION", "MEDICAL_REPORT", "DISCHARGE_SUMMARY", "POLICE_REPORT", "VEHICLE_RC", "ESTIMATE", "OTHER"].map((t) => (
-                                            <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
-                                        ))}
-                                    </select>
-                                    <button type="submit" className="btn btn-ghost" disabled={!uploadFile || uploading}>
-                                        <Upload size={13} />
-                                        {uploading ? "…" : "Upload"}
-                                    </button>
-                                </form>
+                                )}
                             </div>
                             {/* Claim Timeline */}
                             <ClaimTimeline entries={timelineEntries} loading={timelineLoading} documents={documents} claimCreatedAt={claim.created_at} />
