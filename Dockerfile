@@ -6,13 +6,15 @@
 # ── Stage 1: builder ──────────────────────────────────────────────────────────
 FROM python:3.11-slim AS builder
 
-# System build deps (compile wheels for opencv, cryptography, etc.)
+# System build deps (compile wheels for opencv, PyMuPDF, cryptography, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libffi-dev \
     libssl-dev \
     libpq-dev \
+    libmupdf-dev \
+    mupdf \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -39,7 +41,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-hin \
     libzbar0 \
     poppler-utils \
-    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 

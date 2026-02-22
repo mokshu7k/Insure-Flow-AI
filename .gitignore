@@ -21,6 +21,11 @@ build/
 service-account*.json
 gcp-credentials*.json
 credentials*.json
+gcp_api_key.txt
+secret_key.txt
+encryption_key.txt
+qr_secret_key.txt
+database_url.txt
 
 # ── Virtual environments ───────────────────────────────────────────────────────
 .venv/

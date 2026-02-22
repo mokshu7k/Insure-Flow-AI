@@ -44,7 +44,9 @@ google-cloud-texttospeech
 # Image forensics: metadata, ELA, copy-move detection, perceptual hashing
 exifread
 imagehash
-opencv-python
+scipy
+PyWavelets
+opencv-python-headless
 scikit-image
 pytesseract
 PyMuPDF
