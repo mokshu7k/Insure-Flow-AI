@@ -609,6 +609,12 @@ USERS = [
         "full_name": "Claim Adjuster",
     },
     {
+        "email": "auditor@insureflow.ai",
+        "password": "Auditor@123",
+        "role": "AUDITOR",
+        "full_name": "Compliance Auditor",
+    },
+    {
         "email": "hospital@provider.ai",
         "password": "Provider@123",
         "role": "PROVIDER",
@@ -1226,11 +1232,12 @@ async def seed() -> None:
 
         print(f"\n✓ Done — {users_created} users, {policies_created} policies, {claims_created} claims, {settlement_created} settlement(s) created.")
         print("\n── Test credentials ────────────────────────────")
-        print("  admin@insureflow.ai     / Admin@123  (INSURER_ADMIN)")
-        print("  customer1@test.ai       / Test1234!  (CUSTOMER)")
-        print("  customer2@test.ai       / Test1234!  (CUSTOMER)")
-        print("  adjuster@insureflow.ai  / Admin@123  (CLAIM_ADJUSTER)")
-        print("  hospital@provider.ai    / Provider@123 (PROVIDER)")
+        print("  admin@insureflow.ai     / Admin@123     (INSURER_ADMIN)")
+        print("  customer1@test.ai       / Test1234!     (CUSTOMER)")
+        print("  customer2@test.ai       / Test1234!     (CUSTOMER)")
+        print("  adjuster@insureflow.ai  / Admin@123     (CLAIM_ADJUSTER)")
+        print("  auditor@insureflow.ai   / Auditor@123   (AUDITOR)")
+        print("  hospital@provider.ai    / Provider@123  (PROVIDER)")
         print("\n── Policies seeded for customer1 ───────────────")
         print("  POL-HEALTH-2026-001    HEALTH        ₹5,00,000  (ACTIVE)")
         print("  POL-MOTOR-2026-001     MOTOR         ₹3,00,000  (ACTIVE)")

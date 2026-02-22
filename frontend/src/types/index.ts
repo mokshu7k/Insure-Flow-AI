@@ -297,3 +297,38 @@ export interface NetworkClaimItem {
     has_qr: boolean;
 }
 export interface NetworkClaimsResponse { items: NetworkClaimItem[]; total: number; }
+
+// ── Audit Agent ───────────────────────────────────
+export interface AuditFinding {
+    id: string;
+    audit_run_id: string;
+    finding_type: string;
+    severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+    entity_type: string;
+    entity_id: string;
+    supporting_entity_ids: string[];
+    description: string;
+    gemini_narrative: string | null;
+    recommended_action: string | null;
+    evidence: Record<string, unknown>;
+    created_at: string;
+}
+export interface AuditRun {
+    id: string;
+    run_id: string;
+    status: "RUNNING" | "COMPLETED" | "COMPLETED_WITH_ERRORS" | "FAILED";
+    started_at: string;
+    completed_at: string | null;
+    total_findings: number;
+    critical_count: number;
+    high_count: number;
+    medium_count: number;
+    low_count: number;
+    summary_narrative: string | null;
+    errors: Record<string, string>;
+    created_at: string;
+}
+export interface AuditRunDetail extends AuditRun { findings: AuditFinding[]; }
+export interface AuditRunListResponse { items: AuditRun[]; total: number; page: number; page_size: number; }
+export interface AuditFindingListResponse { items: AuditFinding[]; total: number; page: number; page_size: number; }
+export interface AuditTriggerResponse { run_id: string; status: string; message: string; }

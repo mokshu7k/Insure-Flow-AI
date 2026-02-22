@@ -15,11 +15,11 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
-from app.core.rbac import require_role
+from app.core.rbac import require_any_role, require_role
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.audit_finding import (
@@ -34,6 +34,32 @@ from app.services.audit_finding_service import AuditFindingService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/audit", tags=["audit"])
+
+
+@router.post("/trigger", status_code=202)
+async def trigger_audit_sweep(
+    background_tasks: BackgroundTasks,
+    _: User = Depends(require_any_role(["AUDITOR", "INSURER_ADMIN"])),
+):
+    """Kick off a new audit sweep in the background. Returns run_id immediately."""
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    run_id = f"audit-{now.strftime('%Y-%m-%dT%H:%M:%S')}"
+
+    async def _sweep() -> None:
+        from app.ai_agents.auditor.graph import run_audit_sweep
+        from app.db.session import AsyncSessionLocal
+
+        try:
+            async with AsyncSessionLocal() as session:
+                await run_audit_sweep(run_id=run_id, db=session)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("[trigger] Audit sweep failed: %s", exc)
+
+    background_tasks.add_task(_sweep)
+    logger.info("[trigger] Audit sweep enqueued | run_id=%s", run_id)
+    return {"run_id": run_id, "status": "RUNNING", "message": "Audit sweep started."}
 
 
 @router.get("/runs", response_model=AuditRunListResponse)

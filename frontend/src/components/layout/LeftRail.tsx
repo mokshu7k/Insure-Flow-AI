@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuthStore, useIsAdmin, useIsAdjuster } from "@/store/authStore";
 import {
-    LayoutDashboard, FileText, AlertTriangle, Scale, Shield, User, LogOut,
+    LayoutDashboard, FileText, AlertTriangle, Scale, Shield, ShieldAlert, User, LogOut,
     MessageSquare, QrCode, PanelLeftClose, PanelLeftOpen
 } from "lucide-react";
 
@@ -14,6 +14,7 @@ const navItems = [
     { href: "/cashless", label: "Cashless", icon: QrCode, alwaysShow: true },
     { href: "/chat", label: "Assistant", icon: MessageSquare, alwaysShow: true },
     { href: "/adjuster", label: "Adjuster", icon: Scale, adminOnly: true },
+    { href: "/audit", label: "Audit", icon: ShieldAlert, auditorRole: true },
     { href: "/compliance", label: "Compliance", icon: Shield, complianceRole: true },
     { href: "/profile", label: "Profile", icon: User, alwaysShow: true },
 ];
@@ -26,7 +27,7 @@ export function LeftRail() {
     const isAuditor = user?.role === "AUDITOR";
     const [collapsed, setCollapsed] = useState(false);
 
-    const visible = navItems.filter((i) => i.alwaysShow || (i.adminOnly && isAdmin) || (i.complianceRole && (isAdmin || isAuditor)));
+    const visible = navItems.filter((i) => i.alwaysShow || (i.adminOnly && isAdmin) || (i.auditorRole && (isAdmin || isAuditor)) || (i.complianceRole && (isAdmin || isAuditor)));
 
     const railWidth = collapsed ? 56 : 220;
 
