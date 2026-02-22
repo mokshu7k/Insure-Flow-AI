@@ -52,7 +52,7 @@ spec:
             - name: COOKIE_SECURE
               value: "true"
             - name: ALLOWED_ORIGINS
-              value: '["https://YOUR_FRONTEND_DOMAIN"]'
+              value: '["https://insure-flow-ai.vercel.app","http://localhost:3000","http://localhost:3001"]'
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef:
