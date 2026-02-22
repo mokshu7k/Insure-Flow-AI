@@ -190,7 +190,7 @@ function SeverityBadge({ severity }: { severity: string }) {
 function StatusBadge({ status }: { status: string }) {
     const color = status === "COMPLETED" ? "var(--green)"
         : status === "RUNNING" ? "var(--blue)"
-        : status === "COMPLETED_WITH_ERRORS" ? "var(--amber)"
+        : status === "COMPLETED" ? "var(--amber)"
         : "var(--crimson)";
     return (
         <span style={{
