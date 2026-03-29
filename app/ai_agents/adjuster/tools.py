@@ -127,6 +127,43 @@ async def get_fraud_assessment(claim_id: str, *, db, adjuster_id: str) -> dict[s
         return {"error": str(exc)}
 
 
+async def get_policy_details(claim_id: str, *, db, adjuster_id: str) -> dict[str, Any]:
+    """Fetch the policy linked to the claim — coverage, schedule, T&C, deductible, copay."""
+    from sqlalchemy import select
+    from app.models.claim import Claim
+    from app.models.policy import Policy
+    try:
+        r = await db.execute(select(Claim.policy_id).where(Claim.id == uuid.UUID(claim_id)))
+        policy_id = r.scalar_one_or_none()
+        if not policy_id:
+            return {"info": "No policy linked to this claim."}
+        pol_res = await db.execute(select(Policy).where(Policy.id == policy_id))
+        p = pol_res.scalar_one_or_none()
+        if not p:
+            return {"info": "Policy record not found."}
+        return {
+            "policy_id":                  str(p.id),
+            "policy_number":              p.policy_number,
+            "policy_type":                p.policy_type,
+            "status":                     p.status,
+            "sum_insured":                float(p.sum_insured),
+            "premium_amount":             float(p.premium_amount),
+            "deductible":                 float(p.deductible) if p.deductible else None,
+            "copay_percentage":           float(p.copay_percentage) if p.copay_percentage else None,
+            "start_date":                 str(p.start_date),
+            "end_date":                   str(p.end_date),
+            "insured_name":               p.insured_name,
+            "nominee_name":               p.nominee_name,
+            "terms_conditions_version":   p.terms_conditions_version,
+            "coverage_details":           p.coverage_details or {},
+            "policy_schedule":            p.policy_schedule or {},
+            "type_specific_data":         p.type_specific_data or {},
+        }
+    except Exception as exc:
+        logger.error("get_policy_details error: %s", exc)
+        return {"error": str(exc)}
+
+
 async def get_verification_report(claim_id: str, *, db, adjuster_id: str) -> dict[str, Any]:
     """Fetch the claim's AI verification report (cross-check of claim vs documents)."""
     from sqlalchemy import select
@@ -153,11 +190,12 @@ async def generate_report(claim_id: str, *, db, adjuster_id: str) -> dict[str, A
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     # Gather all context
-    claim       = await get_full_claim(claim_id, db=db, adjuster_id=adjuster_id)
-    history     = await get_claimant_history(claim_id, db=db, adjuster_id=adjuster_id)
-    docs        = await get_document_extractions(claim_id, db=db, adjuster_id=adjuster_id)
-    fraud       = await get_fraud_assessment(claim_id, db=db, adjuster_id=adjuster_id)
+    claim        = await get_full_claim(claim_id, db=db, adjuster_id=adjuster_id)
+    history      = await get_claimant_history(claim_id, db=db, adjuster_id=adjuster_id)
+    docs         = await get_document_extractions(claim_id, db=db, adjuster_id=adjuster_id)
+    fraud        = await get_fraud_assessment(claim_id, db=db, adjuster_id=adjuster_id)
     verification = await get_verification_report(claim_id, db=db, adjuster_id=adjuster_id)
+    policy       = await get_policy_details(claim_id, db=db, adjuster_id=adjuster_id)
 
     if not settings.GCP_API_KEY:
         return {"error": "No GCP_API_KEY configured"}
@@ -219,7 +257,9 @@ SECTION 6 HEADING:  AI RECOMMENDATION
     APPROVE
     REJECT
     MANUAL REVIEW
-  Then on the following lines, write 2-3 sentences explaining the reasoning.
+  Then on the following lines, write 2-3 sentences explaining the reasoning. Your recommendation MUST
+  explicitly reference whether the claimed event and amount are within the policy's covered risks,
+  exclusions, room rent / sub-limits, deductible, and co-pay percentage from the POLICY COVERAGE section.
 
 SECTION 7 HEADING:  ACTION ITEMS
   Content: Numbered action bullets (use "-" prefix, NOT numbers):
@@ -229,6 +269,16 @@ SECTION 7 HEADING:  ACTION ITEMS
 ════════════════════════════════════════
 INPUT DATA
 ════════════════════════════════════════
+
+POLICY COVERAGE & TERMS:
+Sum Insured: {policy.get('sum_insured', 'N/A')} | Deductible: {policy.get('deductible', 'None')} | Co-pay: {policy.get('copay_percentage', 0)}%
+T&C Version: {policy.get('terms_conditions_version', 'N/A')} | Valid: {policy.get('start_date')} → {policy.get('end_date')}
+Covered Risks: {policy.get('coverage_details', {}).get('covered', [])}
+Exclusions: {policy.get('coverage_details', {}).get('exclusions', [])}
+Key Limits: room_rent={policy.get('coverage_details', {}).get('room_rent_limit_per_day', 'N/A')}, icu={policy.get('coverage_details', {}).get('icu_limit_per_day', 'N/A')}, ambulance={policy.get('coverage_details', {}).get('ambulance_limit', 'N/A')}
+Waiting Periods: initial={policy.get('coverage_details', {}).get('initial_waiting_period_days', 'N/A')}d, pre-existing={policy.get('coverage_details', {}).get('pre_existing_waiting_period_days', 'N/A')}d
+Schedule: {policy.get('policy_schedule', {})}
+Type-specific: {policy.get('type_specific_data', {})}
 
 CLAIM:
 {claim}

@@ -11,8 +11,9 @@ import { fraudService } from "@/services/fraudService";
 import { claimService } from "@/services/claimService";
 import { documentService } from "@/services/documentService";
 import { adjusterService } from "@/services/adjusterService";
+import { policyService } from "@/services/policyService";
 import { complianceService } from "@/services/complianceService";
-import type { Claim, FraudAssessment, ClaimDocumentResponse, AuditLogEntry } from "@/types";
+import type { Claim, FraudAssessment, ClaimDocumentResponse, AuditLogEntry, Policy } from "@/types";
 import { canTransitionTo } from "@/types";
 import {
     ArrowLeft, Upload, FileText, CheckCircle, XCircle, AlertTriangle,
@@ -128,6 +129,8 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
     const [claimReport, setClaimReport] = useState<string | null>(null);
     const [reportLoading, setReportLoading] = useState(false);
     const [reportLoaded, setReportLoaded] = useState(false);
+    const [policy, setPolicy] = useState<Policy | null>(null);
+    const [coverageOpen, setCoverageOpen] = useState(false);
     const [agentMessages, setAgentMessages] = useState<{ role: "user" | "ai"; content: string }[]>([]);
     const [agentInput, setAgentInput] = useState("");
     const [agentSending, setAgentSending] = useState(false);
@@ -198,6 +201,9 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                 documentService.listClaimDocs(id),
             ]);
             setClaim(c);
+            if (c.policy_id) {
+                policyService.get(c.policy_id).then(setPolicy).catch(() => {});
+            }
             setDocuments(docs);
             startPollingIfNeeded(docs);
             // Fetch existing fraud assessment only for admins/adjusters
@@ -506,6 +512,106 @@ export default function ClaimDetailPage({ params }: { params: Promise<{ id: stri
                                     </div>
                                 )}
                             </div>
+
+                            {/* Policy Coverage */}
+                            {policy && (
+                                <div className="panel" style={{ marginBottom: 16, overflow: "hidden" }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCoverageOpen((o) => !o)}
+                                        style={{
+                                            width: "100%", display: "flex", alignItems: "center",
+                                            justifyContent: "space-between", padding: 18,
+                                            background: "transparent", border: "none",
+                                            cursor: "pointer", color: "inherit",
+                                        }}
+                                    >
+                                        <span style={{ fontSize: "0.6875rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)" }}>
+                                            Policy Coverage
+                                        </span>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                            {policy.terms_conditions_version && (
+                                                <span style={{ fontSize: "0.625rem", fontFamily: "var(--font-mono)", background: "var(--surface-2,#f1f5f9)", borderRadius: 4, padding: "2px 6px", color: "var(--text-muted)" }}>
+                                                    {policy.terms_conditions_version}
+                                                </span>
+                                            )}
+                                            {coverageOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                        </div>
+                                    </button>
+                                    {coverageOpen && (
+                                        <div style={{ padding: "0 18px 18px" }}>
+                                            {/* Financial */}
+                                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 16px", marginBottom: 14 }}>
+                                                {([
+                                                    ["Sum Insured", formatCurrency(policy.sum_insured)],
+                                                    ["Deductible", policy.deductible != null ? formatCurrency(policy.deductible) : "—"],
+                                                    ["Co-pay", policy.copay_percentage != null ? `${policy.copay_percentage}%` : "—"],
+                                                ] as [string, string][]).map(([label, val]) => (
+                                                    <div key={label}>
+                                                        <div style={{ fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 2 }}>{label}</div>
+                                                        <div style={{ fontSize: "0.8125rem", fontWeight: 600 }}>{val}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {/* Covered */}
+                                            {policy.coverage_details?.covered && policy.coverage_details.covered.length > 0 && (
+                                                <div style={{ marginBottom: 12 }}>
+                                                    <div style={{ fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Covered</div>
+                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                                        {policy.coverage_details.covered.map((item) => (
+                                                            <span key={item} style={{ fontSize: "0.6875rem", background: "rgba(34,197,94,0.1)", color: "var(--green,#16a34a)", borderRadius: 4, padding: "2px 7px", border: "1px solid rgba(34,197,94,0.2)" }}>
+                                                                {item.replace(/_/g, " ")}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Exclusions */}
+                                            {policy.coverage_details?.exclusions && policy.coverage_details.exclusions.length > 0 && (
+                                                <div style={{ marginBottom: 12 }}>
+                                                    <div style={{ fontSize: "0.625rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Exclusions</div>
+                                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                                        {policy.coverage_details.exclusions.map((item) => (
+                                                            <span key={item} style={{ fontSize: "0.6875rem", background: "rgba(220,38,38,0.07)", color: "var(--crimson,#dc2626)", borderRadius: 4, padding: "2px 7px", border: "1px solid rgba(220,38,38,0.15)" }}>
+                                                                {item.replace(/_/g, " ")}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {/* Key limits */}
+                                            {policy.coverage_details && (
+                                                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 24px" }}>
+                                                    {policy.coverage_details.room_rent_limit_per_day != null && (
+                                                        <div style={{ fontSize: "0.75rem" }}>
+                                                            <span style={{ color: "var(--text-muted)" }}>Room rent: </span>
+                                                            <span style={{ fontWeight: 600 }}>{formatCurrency(policy.coverage_details.room_rent_limit_per_day as number)}/day</span>
+                                                        </div>
+                                                    )}
+                                                    {policy.coverage_details.icu_limit_per_day != null && (
+                                                        <div style={{ fontSize: "0.75rem" }}>
+                                                            <span style={{ color: "var(--text-muted)" }}>ICU: </span>
+                                                            <span style={{ fontWeight: 600 }}>{formatCurrency(policy.coverage_details.icu_limit_per_day as number)}/day</span>
+                                                        </div>
+                                                    )}
+                                                    {policy.coverage_details.initial_waiting_period_days != null && (
+                                                        <div style={{ fontSize: "0.75rem" }}>
+                                                            <span style={{ color: "var(--text-muted)" }}>Initial wait: </span>
+                                                            <span style={{ fontWeight: 600 }}>{policy.coverage_details.initial_waiting_period_days}d</span>
+                                                        </div>
+                                                    )}
+                                                    {policy.coverage_details.pre_existing_waiting_period_days != null && (
+                                                        <div style={{ fontSize: "0.75rem" }}>
+                                                            <span style={{ color: "var(--text-muted)" }}>Pre-existing wait: </span>
+                                                            <span style={{ fontWeight: 600 }}>{policy.coverage_details.pre_existing_waiting_period_days}d</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Documents */}
                             <div className="panel" style={{ padding: 18, marginBottom: 16 }}>

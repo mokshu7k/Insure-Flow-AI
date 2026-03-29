@@ -868,6 +868,121 @@ async def _get_or_create_user(db: AsyncSession, data: dict) -> tuple[User, bool]
     return user, True
 
 
+# Per-policy-type defaults for coverage_details, policy_schedule, T&C, financials.
+# These are merged into every seeded policy of that type.
+_POLICY_TYPE_ENRICHMENT: dict[str, dict] = {
+    "HEALTH": {
+        "deductible": 5_000.0,
+        "copay_percentage": 10.0,
+        "terms_conditions_version": "HEALTH-TC-v2.1",
+        "coverage_details": {
+            "covered": ["hospitalization", "pre_hospitalization_30_days", "post_hospitalization_60_days",
+                        "ambulance", "daycare_procedures", "organ_donor_expenses"],
+            "exclusions": ["cosmetic_surgery", "self_inflicted_injuries", "war_injuries",
+                           "experimental_treatments", "fertility_treatments"],
+            "room_rent_limit_per_day": 5_000,
+            "icu_limit_per_day": 10_000,
+            "ambulance_limit": 2_000,
+            "daycare_procedures_covered": True,
+            "pre_existing_waiting_period_days": 730,
+            "initial_waiting_period_days": 30,
+        },
+        "policy_schedule": {
+            "plan_name": "Health Individual Plan",
+            "sum_insured_breakdown": {"base_sum_insured": 500_000, "restore_benefit": 500_000},
+            "network_hospitals": ["City Hospital", "Metro General", "Apollo", "Fortis"],
+            "cashless_available": False,
+            "reimbursement_turnaround_days": 30,
+            "no_claim_bonus_pct": 5,
+        },
+        "type_specific_data": {
+            "pre_existing_conditions": [],
+            "maternity_cover": False,
+            "critical_illness_rider": False,
+        },
+    },
+    "CASHLESS": {
+        "deductible": 0.0,
+        "copay_percentage": 0.0,
+        "terms_conditions_version": "CASHLESS-TC-v1.4",
+        "coverage_details": {
+            "covered": ["cashless_hospitalization", "pre_hospitalization_30_days",
+                        "post_hospitalization_60_days", "daycare_procedures"],
+            "exclusions": ["opd_consultations", "cosmetic_surgery", "self_inflicted_injuries",
+                           "non_network_hospital_planned_admissions"],
+            "room_rent_limit_per_day": 8_000,
+            "icu_limit_per_day": 15_000,
+            "pre_existing_waiting_period_days": 365,
+            "initial_waiting_period_days": 0,
+        },
+        "policy_schedule": {
+            "plan_name": "Cashless Health Plan",
+            "sum_insured_breakdown": {"base_sum_insured": 400_000},
+            "network_hospitals": ["City Hospital", "Apollo", "Fortis", "Max"],
+            "cashless_available": True,
+            "preauth_required": True,
+            "preauth_sla_hours": 2,
+        },
+        "type_specific_data": {
+            "pre_existing_conditions": [],
+            "network_tier": "PREMIUM",
+        },
+    },
+    "MOTOR": {
+        "deductible": 1_000.0,
+        "copay_percentage": 0.0,
+        "terms_conditions_version": "MOTOR-TC-v3.0",
+        "coverage_details": {
+            "covered": ["own_damage", "theft", "natural_calamity", "fire",
+                        "third_party_liability", "personal_accident_cover"],
+            "exclusions": ["drunk_driving", "unlicensed_driver", "commercial_use_of_private_vehicle",
+                           "mechanical_electrical_breakdown", "wear_and_tear"],
+            "idv": 300_000,
+            "nil_depreciation_available": True,
+            "roadside_assistance": True,
+            "personal_accident_cover": 1_500_000,
+        },
+        "policy_schedule": {
+            "plan_name": "Motor Own Damage",
+            "vehicle_details": {"make": "Maruti", "model": "Swift", "year": 2022, "reg_no": "MH12AB1234"},
+            "network_garages": ["Maruti Authorised Service", "AutoFix Pune"],
+            "cashless_garages_available": True,
+            "claim_settlement_method": "surveyor_assessment",
+        },
+        "type_specific_data": {
+            "vehicle_reg": "MH12AB1234",
+            "make": "Maruti",
+            "model": "Swift",
+            "year": 2022,
+            "idv_method": "market_value",
+        },
+    },
+    "REIMBURSEMENT": {
+        "deductible": 2_000.0,
+        "copay_percentage": 20.0,
+        "terms_conditions_version": "REIMB-TC-v1.2",
+        "coverage_details": {
+            "covered": ["opd_consultations", "diagnostics", "pharmacy", "specialist_visits"],
+            "exclusions": ["cosmetic_treatment", "vitamin_supplements", "dental",
+                           "spectacles_contact_lenses", "fertility_treatments"],
+            "per_consultation_limit": 1_500,
+            "annual_pharmacy_limit": 20_000,
+            "diagnostic_limit_per_claim": 10_000,
+        },
+        "policy_schedule": {
+            "plan_name": "Reimbursement OPD Plan",
+            "sum_insured_breakdown": {"base_sum_insured": 200_000},
+            "reimbursement_turnaround_days": 21,
+            "submission_window_days": 90,
+        },
+        "type_specific_data": {
+            "plan": "Super Top-Up",
+            "opd_sub_limit": 50_000,
+        },
+    },
+}
+
+
 async def _get_or_create_policy(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -881,6 +996,12 @@ async def _get_or_create_policy(
     insured_name: str = "Test Customer One",
     insurer_id: uuid.UUID | None = None,
     policy_type_id: uuid.UUID | None = None,
+    coverage_details: dict | None = None,
+    policy_schedule: dict | None = None,
+    terms_conditions_version: str | None = None,
+    deductible: float | None = None,
+    copay_percentage: float | None = None,
+    type_specific_data: dict | None = None,
 ) -> tuple[Policy, bool]:
     result = await db.execute(select(Policy).where(Policy.policy_number == policy_number))
     existing = result.scalar_one_or_none()
@@ -900,6 +1021,12 @@ async def _get_or_create_policy(
         meta_data=meta_data,
         insurer_id=insurer_id,
         policy_type_id=policy_type_id,
+        coverage_details=coverage_details,
+        policy_schedule=policy_schedule,
+        terms_conditions_version=terms_conditions_version,
+        deductible=deductible,
+        copay_percentage=copay_percentage,
+        type_specific_data=type_specific_data,
     )
     db.add(policy)
     return policy, True
@@ -1127,6 +1254,7 @@ async def seed() -> None:
                 insured_name=customer.full_name or "Test Customer One",
                 insurer_id=_insurer_id,
                 policy_type_id=_pt_id,
+                **_POLICY_TYPE_ENRICHMENT.get(pol_type, {}),
             )
             created_policies[pol_num] = policy
             if created:
@@ -1152,6 +1280,7 @@ async def seed() -> None:
                 insured_name=customer2.full_name or "Test Customer Two",
                 insurer_id=_insurer_id2,
                 policy_type_id=_pt_id2,
+                **_POLICY_TYPE_ENRICHMENT.get(pol_type, {}),
             )
             if created:
                 policies_created += 1

@@ -15,11 +15,26 @@ export interface Policy {
     status: "ACTIVE" | "EXPIRED" | "CANCELLED";
     sum_insured: number;
     premium_amount: number;
+    deductible: number | null;
+    copay_percentage: number | null;
     start_date: string;
     end_date: string;
     insured_name: string | null;
     insured_dob: string | null;
     nominee_name: string | null;
+    coverage_details: {
+        covered?: string[];
+        exclusions?: string[];
+        room_rent_limit_per_day?: number;
+        icu_limit_per_day?: number;
+        ambulance_limit?: number;
+        initial_waiting_period_days?: number;
+        pre_existing_waiting_period_days?: number;
+        [key: string]: unknown;
+    } | null;
+    policy_schedule: Record<string, unknown> | null;
+    terms_conditions_version: string | null;
+    type_specific_data: Record<string, unknown> | null;
     meta_data: Record<string, unknown> | null;
     created_at: string;
     updated_at: string;
